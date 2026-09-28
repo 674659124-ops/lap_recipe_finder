@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import '../services/app_data.dart';
+import '../models/recipe.dart';
 import 'home.dart';
 import 'categories.dart';
 import 'detail.dart';
 import 'mealplanner.dart';
+import 'community.dart';
+import 'profile.dart';
 
 class FavoritesScreen extends StatefulWidget {
   const FavoritesScreen({super.key});
@@ -13,34 +17,25 @@ class FavoritesScreen extends StatefulWidget {
 
 class _FavoritesScreenState extends State<FavoritesScreen> {
   int _currentIndex = 2; // "รายการโปรด" tab selected
+  final AppData _appData = AppData();
 
-  final List<Map<String, String>> _favoriteRecipes = [
-    {
-      'title': 'ไข่เจียวมะเขือเทศ',
-      'time': '15 นาที',
-      'icon': '🍳',
-    },
-    {
-      'title': 'ข้าวผัดไข่',
-      'time': '15 นาที',
-      'icon': '🍚',
-    },
-    {
-      'title': 'ต้มจืดไข่น้ำ',
-      'time': '20 นาที',
-      'icon': '🍲',
-    },
-    {
-      'title': 'สมูทตี้กล้วย',
-      'time': '5 นาที',
-      'icon': '🥤',
-    },
-    {
-      'title': 'สปาเก็ตตี้คาโบนารา',
-      'time': '25 นาที',
-      'icon': '🍝',
-    },
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _appData.addListener(_onAppDataChanged);
+  }
+
+  @override
+  void dispose() {
+    _appData.removeListener(_onAppDataChanged);
+    super.dispose();
+  }
+
+  void _onAppDataChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
 
   void _onTabTapped(int index) {
     if (index == _currentIndex) return;
@@ -72,6 +67,15 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
           reverseTransitionDuration: Duration.zero,
         ),
       );
+    } else if (index == 4) {
+      Navigator.pushReplacement(
+        context,
+        PageRouteBuilder(
+          pageBuilder: (context, animation1, animation2) => const CommunityScreen(),
+          transitionDuration: Duration.zero,
+          reverseTransitionDuration: Duration.zero,
+        ),
+      );
     } else {
       setState(() {
         _currentIndex = index;
@@ -79,23 +83,18 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     }
   }
 
-  void _removeFavorite(int index) {
-    final removedItem = _favoriteRecipes[index];
-    setState(() {
-      _favoriteRecipes.removeAt(index);
-    });
+  void _removeFavorite(Recipe recipe) {
+    _appData.toggleFavorite(recipe);
 
     ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('นำ "${removedItem['title']}" ออกจากรายการโปรดแล้ว'),
+        content: Text('นำ "${recipe.title}" ออกจากรายการโปรดแล้ว'),
         action: SnackBarAction(
           label: 'เลิกทำ',
           textColor: Colors.yellowAccent,
           onPressed: () {
-            setState(() {
-              _favoriteRecipes.insert(index, removedItem);
-            });
+            _appData.toggleFavorite(recipe);
           },
         ),
         duration: const Duration(seconds: 3),
@@ -106,6 +105,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   @override
   Widget build(BuildContext context) {
     const primaryGreen = Color(0xFF207935);
+    final favList = _appData.favoriteRecipes;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF9F9F9),
@@ -121,6 +121,17 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
             fontSize: 22,
           ),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.person_outline_rounded, color: primaryGreen),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const ProfileScreen()),
+              );
+            },
+          ),
+        ],
       ),
       body: SafeArea(
         child: Padding(
@@ -140,7 +151,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                     ),
                   ),
                   Text(
-                    '${_favoriteRecipes.length} เมนู',
+                    '${favList.length} เมนู',
                     style: const TextStyle(
                       fontSize: 14,
                       color: Color(0xFF8C919E),
@@ -150,7 +161,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                 ],
               ),
               const SizedBox(height: 16),
-              _favoriteRecipes.isEmpty
+              favList.isEmpty
                   ? Expanded(
                       child: Center(
                         child: Column(
@@ -184,11 +195,11 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                     )
                   : Expanded(
                       child: ListView.separated(
-                        itemCount: _favoriteRecipes.length,
+                        itemCount: favList.length,
                         separatorBuilder: (context, index) => const SizedBox(height: 12),
                         itemBuilder: (context, index) {
-                          final recipe = _favoriteRecipes[index];
-                          return _buildFavoriteCard(recipe, index);
+                          final recipe = favList[index];
+                          return _buildFavoriteCard(recipe);
                         },
                       ),
                     ),
@@ -223,24 +234,22 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
             icon: Icon(Icons.calendar_month_rounded),
             label: 'วางแผนมื้ออาหาร',
           ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.people_alt_rounded),
+            label: 'ชุมชน',
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildFavoriteCard(Map<String, String> recipe, int index) {
+  Widget _buildFavoriteCard(Recipe recipe) {
     return InkWell(
       onTap: () {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => DetailScreen(
-              recipeTitle: recipe['title'] ?? 'เมนูอาหาร',
-              prepTime: recipe['time'] ?? '15 นาที',
-              cookTime: '10 นาที',
-              difficulty: 'ง่าย',
-              icon: recipe['icon'] ?? '🍳',
-            ),
+            builder: (context) => DetailScreen(recipe: recipe),
           ),
         );
       },
@@ -262,17 +271,23 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         child: Row(
           children: [
             // Recipe Image / Icon Container
-            Container(
-              width: 68,
-              height: 68,
-              decoration: BoxDecoration(
-                color: const Color(0xFFF2F4F7),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                recipe['icon'] ?? '🍽️',
-                style: const TextStyle(fontSize: 34),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox(
+                width: 68,
+                height: 68,
+                child: Image.network(
+                  recipe.imageUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    color: const Color(0xFFF2F4F7),
+                    alignment: Alignment.center,
+                    child: Text(
+                      recipe.icon,
+                      style: const TextStyle(fontSize: 34),
+                    ),
+                  ),
+                ),
               ),
             ),
             const SizedBox(width: 16),
@@ -282,7 +297,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    recipe['title'] ?? '',
+                    recipe.title,
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -299,7 +314,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        recipe['time'] ?? '',
+                        '${recipe.prepTime} | ${recipe.difficulty}',
                         style: const TextStyle(
                           fontSize: 13,
                           color: Color(0xFF8C919E),
@@ -312,7 +327,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
             ),
             // Red Heart / Remove favorite button
             IconButton(
-              onPressed: () => _removeFavorite(index),
+              onPressed: () => _removeFavorite(recipe),
               icon: const Icon(
                 Icons.favorite_rounded,
                 color: Colors.redAccent,

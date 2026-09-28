@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import '../services/app_data.dart';
+import '../models/recipe.dart';
 import 'home.dart';
 import 'categories.dart';
 import 'favorites.dart';
 import 'detail.dart';
+import 'community.dart';
+import 'profile.dart';
 
 class MealPlannerScreen extends StatefulWidget {
   const MealPlannerScreen({super.key});
@@ -13,29 +17,30 @@ class MealPlannerScreen extends StatefulWidget {
 
 class _MealPlannerScreenState extends State<MealPlannerScreen> {
   static const primaryGreen = Color(0xFF207935);
+  final AppData _appData = AppData();
 
   int _currentIndex = 3; // "วางแผนมื้ออาหาร" tab selected
   DateTime _selectedDate = DateTime(2024, 5, 15);
 
   final List<String> _weekDays = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
 
-  final Map<String, Map<String, String>> _meals = {
-    'เช้า': {
-      'title': 'สมูทตี้กล้วย',
-      'time': '5 นาที',
-      'icon': '🥤',
-    },
-    'กลางวัน': {
-      'title': 'ข้าวผัดไข่',
-      'time': '15 นาที',
-      'icon': '🍚',
-    },
-    'เย็น': {
-      'title': 'ต้มจืดไข่น้ำ',
-      'time': '20 นาที',
-      'icon': '🍲',
-    },
-  };
+  @override
+  void initState() {
+    super.initState();
+    _appData.addListener(_onAppDataChanged);
+  }
+
+  @override
+  void dispose() {
+    _appData.removeListener(_onAppDataChanged);
+    super.dispose();
+  }
+
+  void _onAppDataChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
 
   void _onTabTapped(int index) {
     if (index == _currentIndex) return;
@@ -67,6 +72,15 @@ class _MealPlannerScreenState extends State<MealPlannerScreen> {
           reverseTransitionDuration: Duration.zero,
         ),
       );
+    } else if (index == 4) {
+      Navigator.pushReplacement(
+        context,
+        PageRouteBuilder(
+          pageBuilder: (context, animation1, animation2) => const CommunityScreen(),
+          transitionDuration: Duration.zero,
+          reverseTransitionDuration: Duration.zero,
+        ),
+      );
     } else {
       setState(() {
         _currentIndex = index;
@@ -75,46 +89,171 @@ class _MealPlannerScreenState extends State<MealPlannerScreen> {
   }
 
   void _generateShoppingList() {
+    final ingredientsList = _appData.generateShoppingListForDay(_selectedDate.day);
+    final Map<String, bool> checkedMap = {
+      for (var item in ingredientsList) item: false
+    };
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: const [
-            Icon(Icons.shopping_bag_outlined, color: primaryGreen),
-            SizedBox(width: 10),
-            Text('รายการซื้อของ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-          ],
-        ),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('รายการวัตถุดิบสำหรับมื้ออาหารวันนี้:', style: TextStyle(color: Colors.grey)),
-            SizedBox(height: 12),
-            Text('• ไข่ไก่ 4 ฟอง'),
-            SizedBox(height: 4),
-            Text('• มะเขือเทศ 2 ลูก'),
-            SizedBox(height: 4),
-            Text('• กล้วยหอม 2 ลูก'),
-            SizedBox(height: 4),
-            Text('• ข้าวสวย 1 จาน'),
-            SizedBox(height: 4),
-            Text('• นมสด 200 ml'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('ตกลง', style: TextStyle(color: primaryGreen, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: const Row(
+                children: [
+                  Icon(Icons.shopping_bag_outlined, color: primaryGreen),
+                  SizedBox(width: 10),
+                  Text('รายการซื้อของ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'วัตถุดิบทั้งหมดสำหรับมื้ออาหารวันที่ ${_selectedDate.day} พฤษภาคม ${_selectedDate.year}:',
+                    style: const TextStyle(color: Colors.grey, fontSize: 13),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 240,
+                    width: double.maxFinite,
+                    child: checkedMap.isEmpty
+                        ? const Center(child: Text('ไม่มีรายการมื้ออาหาร'))
+                        : ListView(
+                            shrinkWrap: true,
+                            children: checkedMap.keys.map((item) {
+                              final isChecked = checkedMap[item] ?? false;
+                              return CheckboxListTile(
+                                activeColor: primaryGreen,
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                title: Text(
+                                  item,
+                                  style: TextStyle(
+                                    decoration: isChecked ? TextDecoration.lineThrough : null,
+                                    color: isChecked ? Colors.grey : const Color(0xFF2D3142),
+                                  ),
+                                ),
+                                value: isChecked,
+                                onChanged: (val) {
+                                  setDialogState(() {
+                                    checkedMap[item] = val ?? false;
+                                  });
+                                },
+                              );
+                            }).toList(),
+                          ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('คัดลอกรายการซื้อของแล้ว')),
+                    );
+                  },
+                  child: const Text('คัดลอกรายการ', style: TextStyle(color: Colors.grey)),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('บันทึกรายการซื้อของเรียบร้อยแล้ว'),
+                        backgroundColor: primaryGreen,
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryGreen,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: const Text('ตกลง', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _editMeal(String mealTime) {
+    Recipe selectedRecipe = _appData.getMealsForDay(_selectedDate.day)[mealTime] ?? _appData.recipes.first;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: Text('เลือกเมนูปรับเปลี่ยนมื้อ$mealTime', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              content: SizedBox(
+                height: 250,
+                width: double.maxFinite,
+                child: ListView.separated(
+                  itemCount: _appData.recipes.length,
+                  separatorBuilder: (context, index) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final recipe = _appData.recipes[index];
+                    final isChosen = recipe.id == selectedRecipe.id;
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                      leading: Text(recipe.icon, style: const TextStyle(fontSize: 24)),
+                      title: Text(recipe.title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                      subtitle: Text('${recipe.prepTime} | ${recipe.difficulty}', style: const TextStyle(fontSize: 12)),
+                      trailing: isChosen ? const Icon(Icons.check_circle_rounded, color: primaryGreen) : null,
+                      onTap: () {
+                        setDialogState(() {
+                          selectedRecipe = recipe;
+                        });
+                      },
+                    );
+                  },
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('ยกเลิก', style: TextStyle(color: Colors.grey)),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    _appData.setMealForDay(_selectedDate.day, mealTime, selectedRecipe);
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('เปลี่ยนมื้อ$mealTime เป็น "${selectedRecipe.title}" เรียบร้อยแล้ว'),
+                        backgroundColor: primaryGreen,
+                      ),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryGreen,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('บันทึก'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final dayMeals = _appData.getMealsForDay(_selectedDate.day);
+
     return Scaffold(
       backgroundColor: const Color(0xFFF9F9F9),
       appBar: AppBar(
@@ -129,6 +268,17 @@ class _MealPlannerScreenState extends State<MealPlannerScreen> {
             fontSize: 22,
           ),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.person_outline_rounded, color: primaryGreen),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const ProfileScreen()),
+              );
+            },
+          ),
+        ],
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -159,7 +309,11 @@ class _MealPlannerScreenState extends State<MealPlannerScreen> {
                       children: [
                         IconButton(
                           icon: const Icon(Icons.chevron_left_rounded, color: Color(0xFF2D3142)),
-                          onPressed: () {},
+                          onPressed: () {
+                            setState(() {
+                              _selectedDate = DateTime(2024, 5, _selectedDate.day > 1 ? _selectedDate.day - 1 : 1);
+                            });
+                          },
                         ),
                         const Text(
                           'พฤษภาคม 2024',
@@ -171,7 +325,11 @@ class _MealPlannerScreenState extends State<MealPlannerScreen> {
                         ),
                         IconButton(
                           icon: const Icon(Icons.chevron_right_rounded, color: Color(0xFF2D3142)),
-                          onPressed: () {},
+                          onPressed: () {
+                            setState(() {
+                              _selectedDate = DateTime(2024, 5, _selectedDate.day < 31 ? _selectedDate.day + 1 : 31);
+                            });
+                          },
                         ),
                       ],
                     ),
@@ -195,7 +353,7 @@ class _MealPlannerScreenState extends State<MealPlannerScreen> {
                           .toList(),
                     ),
                     const SizedBox(height: 10),
-                    // Mini Calendar Grid sample
+                    // Mini Calendar Grid
                     _buildCalendarGrid(),
                   ],
                 ),
@@ -214,11 +372,11 @@ class _MealPlannerScreenState extends State<MealPlannerScreen> {
               const SizedBox(height: 16),
 
               // Meals List (เช้า, กลางวัน, เย็น)
-              _buildMealSection('เช้า', _meals['เช้า']!),
+              if (dayMeals.containsKey('เช้า')) _buildMealSection('เช้า', dayMeals['เช้า']!),
               const SizedBox(height: 12),
-              _buildMealSection('กลางวัน', _meals['กลางวัน']!),
+              if (dayMeals.containsKey('กลางวัน')) _buildMealSection('กลางวัน', dayMeals['กลางวัน']!),
               const SizedBox(height: 12),
-              _buildMealSection('เย็น', _meals['เย็น']!),
+              if (dayMeals.containsKey('เย็น')) _buildMealSection('เย็น', dayMeals['เย็น']!),
 
               const SizedBox(height: 28),
 
@@ -278,6 +436,10 @@ class _MealPlannerScreenState extends State<MealPlannerScreen> {
             icon: Icon(Icons.calendar_month_rounded),
             label: 'วางแผนมื้ออาหาร',
           ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.people_alt_rounded),
+            label: 'ชุมชน',
+          ),
         ],
       ),
     );
@@ -300,11 +462,15 @@ class _MealPlannerScreenState extends State<MealPlannerScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: row.map((day) {
               final isSelected = (day == _selectedDate.day);
+              final isCurrentMonth = !((row == days.first && day > 20) || (row == days.last && day < 10));
+
               return GestureDetector(
                 onTap: () {
-                  setState(() {
-                    _selectedDate = DateTime(2024, 5, day);
-                  });
+                  if (isCurrentMonth) {
+                    setState(() {
+                      _selectedDate = DateTime(2024, 5, day);
+                    });
+                  }
                 },
                 child: Container(
                   width: 36,
@@ -321,7 +487,7 @@ class _MealPlannerScreenState extends State<MealPlannerScreen> {
                       fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                       color: isSelected
                           ? Colors.white
-                          : (day > 25 && row == days.first) || (day < 10 && row == days.last)
+                          : !isCurrentMonth
                               ? Colors.grey.shade400
                               : const Color(0xFF2D3142),
                     ),
@@ -335,7 +501,7 @@ class _MealPlannerScreenState extends State<MealPlannerScreen> {
     );
   }
 
-  Widget _buildMealSection(String mealTime, Map<String, String> recipe) {
+  Widget _buildMealSection(String mealTime, Recipe recipe) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -377,7 +543,7 @@ class _MealPlannerScreenState extends State<MealPlannerScreen> {
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
-                    color: Color(0xFF207935),
+                    color: primaryGreen,
                   ),
                 ),
               ],
@@ -386,58 +552,66 @@ class _MealPlannerScreenState extends State<MealPlannerScreen> {
           const SizedBox(width: 14),
           // Food Icon / Thumbnail
           Text(
-            recipe['icon'] ?? '🍽️',
+            recipe.icon,
             style: const TextStyle(fontSize: 28),
           ),
           const SizedBox(width: 12),
           // Meal Details
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  recipe['title'] ?? '',
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF2D3142),
+            child: InkWell(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => DetailScreen(recipe: recipe),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.access_time_rounded,
-                      size: 14,
-                      color: Color(0xFF8C919E),
+                );
+              },
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    recipe.title,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF2D3142),
                     ),
-                    const SizedBox(width: 4),
-                    Text(
-                      recipe['time'] ?? '',
-                      style: const TextStyle(
-                        fontSize: 12,
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.access_time_rounded,
+                        size: 14,
                         color: Color(0xFF8C919E),
                       ),
-                    ),
-                  ],
-                ),
-              ],
+                      const SizedBox(width: 4),
+                      Text(
+                        '${recipe.prepTime} | ${recipe.difficulty}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF8C919E),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
-          // Tap to view details / edit
+          // Edit or View Details
+          IconButton(
+            icon: const Icon(Icons.edit_outlined, size: 18, color: Color(0xFF8C919E)),
+            onPressed: () => _editMeal(mealTime),
+          ),
           IconButton(
             icon: const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Color(0xFF8C919E)),
             onPressed: () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => DetailScreen(
-                    recipeTitle: recipe['title'] ?? 'เมนูอาหาร',
-                    prepTime: recipe['time'] ?? '15 นาที',
-                    cookTime: '10 นาที',
-                    difficulty: 'ง่าย',
-                    icon: recipe['icon'] ?? '🍳',
-                  ),
+                  builder: (context) => DetailScreen(recipe: recipe),
                 ),
               );
             },

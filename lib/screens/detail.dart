@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
+import '../models/recipe.dart';
+import '../services/app_data.dart';
+import 'mealplanner.dart';
+import 'community.dart';
 
 class DetailScreen extends StatefulWidget {
+  final Recipe? recipe;
   final String recipeTitle;
   final String prepTime;
   final String cookTime;
@@ -9,6 +14,7 @@ class DetailScreen extends StatefulWidget {
 
   const DetailScreen({
     super.key,
+    this.recipe,
     this.recipeTitle = 'ไข่เจียวมะเขือเทศ',
     this.prepTime = '15 นาที',
     this.cookTime = '10 นาที',
@@ -21,45 +27,84 @@ class DetailScreen extends StatefulWidget {
 }
 
 class _DetailScreenState extends State<DetailScreen> {
-  bool _isFavorite = false;
+  final AppData _appData = AppData();
 
-  final List<String> _ingredients = [
-    'ไข่ไก่ 2 ฟอง',
-    'มะเขือเทศ 1 ลูก (หั่นเต๋า)',
-    'น้ำปลา 1 ช้อนชา',
-    'น้ำมันพืชสำหรับทอด',
-  ];
+  late Recipe _currentRecipe;
 
-  final List<String> _tools = [
-    'กระทะทอด',
-    'ตะหลิว',
-    'ชามผสมไข่',
-  ];
+  @override
+  void initState() {
+    super.initState();
+    if (widget.recipe != null) {
+      _currentRecipe = widget.recipe!;
+    } else {
+      // Find or fallback to recipe
+      final matches = _appData.recipes.where((r) => r.title == widget.recipeTitle);
+      if (matches.isNotEmpty) {
+        _currentRecipe = matches.first;
+      } else {
+        _currentRecipe = _appData.recipes.first;
+      }
+    }
+    _appData.addListener(_onAppDataChanged);
+  }
 
-  final List<String> _steps = [
-    'ตอกไข่ใส่ชาม ปรุงรสด้วยน้ำปลา ตีไข่ให้เข้ากันดี',
-    'ใส่มะเขือเทศหั่นเต๋าลงไปในชามไข่ แล้วคนให้เข้ากัน',
-    'ตั้งกระทะใช้ไฟปานกลาง ใส่น้ำมันรอจนน้ำมันเริ่มร้อน',
-    'เทไข่ลงกระทะ ทอดจนสุกเหลืองกรอบทั้งสองด้าน ตักขึ้นพักให้สะเด็ดน้ำมัน พร้อมเสิร์ฟ',
-  ];
+  @override
+  void dispose() {
+    _appData.removeListener(_onAppDataChanged);
+    super.dispose();
+  }
 
-  final List<String> _tips = [
-    'บีบน้ำมะนาวสด 2-3 หยดลงในไข่ขณะตี จะช่วยให้ไข่เจียวนุ่มฟูและสีสวยงามยิ่งขึ้น',
-  ];
-
-  final Map<String, String> _nutrition = {
-    'พลังงาน': '220 kcal',
-    'โปรตีน': '12 g',
-    'ไขมัน': '16 g',
-    'คาร์โบไฮเดรต': '4 g',
-  };
+  void _onAppDataChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
 
   void _addToMealPlanner() {
+    _appData.setMealForDay(15, 'กลางวัน', _currentRecipe);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('เพิ่ม "${widget.recipeTitle}" ในแผนมื้ออาหารเรียบร้อยแล้ว!'),
+        content: Text('เพิ่ม "${_currentRecipe.title}" ในแผนมื้ออาหารเรียบร้อยแล้ว!'),
         backgroundColor: const Color(0xFF207935),
         duration: const Duration(seconds: 2),
+        action: SnackBarAction(
+          label: 'ดูแผน',
+          textColor: Colors.white,
+          onPressed: () {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const MealPlannerScreen()),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  void _shareToCommunity() {
+    _appData.createCommunityPost(
+      author: _appData.userName,
+      title: _currentRecipe.title,
+      description: _currentRecipe.description,
+      icon: _currentRecipe.icon,
+      imageUrl: _currentRecipe.imageUrl,
+    );
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('แชร์ "${_currentRecipe.title}" ลงชุมชนเรียบร้อยแล้ว!'),
+        backgroundColor: const Color(0xFF207935),
+        duration: const Duration(seconds: 2),
+        action: SnackBarAction(
+          label: 'ดูชุมชน',
+          textColor: Colors.white,
+          onPressed: () {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const CommunityScreen()),
+            );
+          },
+        ),
       ),
     );
   }
@@ -88,17 +133,19 @@ class _DetailScreenState extends State<DetailScreen> {
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.share_outlined, color: Color(0xFF8C919E)),
+            onPressed: _shareToCommunity,
+          ),
+          IconButton(
             icon: Icon(
-              _isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-              color: _isFavorite ? Colors.redAccent : const Color(0xFF8C919E),
+              _currentRecipe.isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+              color: _currentRecipe.isFavorite ? Colors.redAccent : const Color(0xFF8C919E),
             ),
             onPressed: () {
-              setState(() {
-                _isFavorite = !_isFavorite;
-              });
+              _appData.toggleFavorite(_currentRecipe);
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text(_isFavorite ? 'เพิ่มในรายการโปรดแล้ว' : 'นำออกจากรายการโปรด'),
+                  content: Text(_currentRecipe.isFavorite ? 'เพิ่มในรายการโปรดแล้ว' : 'นำออกจากรายการโปรด'),
                   duration: const Duration(seconds: 1),
                 ),
               );
@@ -113,34 +160,68 @@ class _DetailScreenState extends State<DetailScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Food Header Banner Image / Container
-              Container(
-                width: double.infinity,
-                height: 180,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFF3E0),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.grey.shade200),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      widget.icon,
-                      style: const TextStyle(fontSize: 70),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      widget.recipeTitle,
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF2D3142),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 200,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Image.network(
+                        _currentRecipe.imageUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          color: const Color(0xFFFFF3E0),
+                          child: Center(
+                            child: Text(
+                              _currentRecipe.icon,
+                              style: const TextStyle(fontSize: 70),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
+                      Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.transparent,
+                              Colors.black.withOpacity(0.7),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        bottom: 16,
+                        left: 16,
+                        right: 16,
+                        child: Text(
+                          _currentRecipe.title,
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 12),
+
+              // Description
+              Text(
+                _currentRecipe.description,
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: Color(0xFF6C727F),
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 18),
 
               // Metadata Stat Cards (Prep Time, Cook Time, Difficulty)
               Row(
@@ -148,7 +229,7 @@ class _DetailScreenState extends State<DetailScreen> {
                   Expanded(
                     child: _buildStatCard(
                       icon: Icons.timer_outlined,
-                      value: widget.prepTime,
+                      value: _currentRecipe.prepTime,
                       label: 'เวลาเตรียม',
                       color: const Color(0xFFFF9800),
                     ),
@@ -157,7 +238,7 @@ class _DetailScreenState extends State<DetailScreen> {
                   Expanded(
                     child: _buildStatCard(
                       icon: Icons.soup_kitchen_outlined,
-                      value: widget.cookTime,
+                      value: _currentRecipe.cookTime,
                       label: 'เวลาทำ',
                       color: primaryGreen,
                     ),
@@ -166,7 +247,7 @@ class _DetailScreenState extends State<DetailScreen> {
                   Expanded(
                     child: _buildStatCard(
                       icon: Icons.bar_chart_outlined,
-                      value: widget.difficulty,
+                      value: _currentRecipe.difficulty,
                       label: 'ระดับความยาก',
                       color: const Color(0xFF2196F3),
                     ),
@@ -179,7 +260,7 @@ class _DetailScreenState extends State<DetailScreen> {
               _buildSectionTile(
                 title: 'วัตถุดิบ (Ingredients)',
                 icon: Icons.shopping_basket_outlined,
-                children: _ingredients.map((ing) => Padding(
+                children: _currentRecipe.ingredients.map((ing) => Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4.0),
                   child: Row(
                     children: [
@@ -201,7 +282,7 @@ class _DetailScreenState extends State<DetailScreen> {
               _buildSectionTile(
                 title: 'อุปกรณ์ครัว (Cooking Tools)',
                 icon: Icons.flatware_outlined,
-                children: _tools.map((tool) => Padding(
+                children: _currentRecipe.tools.map((tool) => Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4.0),
                   child: Row(
                     children: [
@@ -223,7 +304,7 @@ class _DetailScreenState extends State<DetailScreen> {
               _buildSectionTile(
                 title: 'ขั้นตอนการทำ (Steps)',
                 icon: Icons.format_list_numbered_rounded,
-                children: _steps.asMap().entries.map((entry) => Padding(
+                children: _currentRecipe.steps.asMap().entries.map((entry) => Padding(
                   padding: const EdgeInsets.symmetric(vertical: 6.0),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -260,7 +341,7 @@ class _DetailScreenState extends State<DetailScreen> {
               _buildSectionTile(
                 title: 'เทคนิคและเคล็ดลับ (Tips & Tricks)',
                 icon: Icons.lightbulb_outline,
-                children: _tips.map((tip) => Padding(
+                children: _currentRecipe.tips.map((tip) => Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4.0),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -287,7 +368,7 @@ class _DetailScreenState extends State<DetailScreen> {
                   Wrap(
                     spacing: 12,
                     runSpacing: 8,
-                    children: _nutrition.entries.map((entry) => Container(
+                    children: _currentRecipe.nutrition.entries.map((entry) => Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
                         color: const Color(0xFFF2F4F7),
@@ -312,29 +393,58 @@ class _DetailScreenState extends State<DetailScreen> {
               ),
               const SizedBox(height: 28),
 
-              // Bottom Button: เพิ่มในแผนมื้ออาหาร
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: ElevatedButton.icon(
-                  onPressed: _addToMealPlanner,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: primaryGreen,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+              // Bottom Buttons Row (Add to Meal Planner & Share to Community)
+              Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 52,
+                      child: ElevatedButton.icon(
+                        onPressed: _addToMealPlanner,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: primaryGreen,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        icon: const Icon(Icons.calendar_month_rounded, size: 18),
+                        label: const Text(
+                          'เพิ่มในแผนมื้ออาหาร',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                  icon: const Icon(Icons.calendar_month_rounded, size: 22),
-                  label: const Text(
-                    'เพิ่มในแผนมื้ออาหาร (Add to Meal Planner)',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
+                  const SizedBox(width: 10),
+                  SizedBox(
+                    height: 52,
+                    child: OutlinedButton.icon(
+                      onPressed: _shareToCommunity,
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: primaryGreen,
+                        side: const BorderSide(color: primaryGreen, width: 1.5),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      icon: const Icon(Icons.people_alt_rounded, size: 18),
+                      label: const Text(
+                        'แชร์ลงชุมชน',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                ],
               ),
               const SizedBox(height: 16),
             ],
