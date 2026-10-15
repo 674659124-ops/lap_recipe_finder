@@ -31,7 +31,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('เข้าสู่ระบบสำเร็จ ยินดีต้อนรับ!'),
+          content: Text('เข้าสู่ระบบสำเร็จ ยินดีต้อนรับ! '),
           backgroundColor: Color(0xFF207935),
           duration: Duration(seconds: 1),
         ),
