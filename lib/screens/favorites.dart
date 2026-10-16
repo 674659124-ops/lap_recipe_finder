@@ -262,7 +262,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
           border: Border.all(color: Colors.grey.shade200),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.03),
+              color: Colors.black.withOpacity(0.02),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -270,24 +270,19 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         ),
         child: Row(
           children: [
-            // Recipe Image / Icon Container
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: SizedBox(
-                width: 68,
-                height: 68,
-                child: Image.network(
-                  recipe.imageUrl,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    color: const Color(0xFFF2F4F7),
-                    alignment: Alignment.center,
-                    child: Text(
-                      recipe.icon,
-                      style: const TextStyle(fontSize: 34),
-                    ),
-                  ),
-                ),
+            // Solid Color Container with Food Icon
+            Container(
+              width: 68,
+              height: 68,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8F5E9),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFC8E6C9)),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                recipe.icon,
+                style: const TextStyle(fontSize: 34),
               ),
             ),
             const SizedBox(width: 16),

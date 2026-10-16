@@ -264,6 +264,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.grey.shade200),
                     ),
                     child: const Center(
                       child: Text('ยังไม่มีสูตรอาหารในหมวดหมู่นี้', style: TextStyle(color: Colors.grey)),
@@ -414,23 +415,29 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: Colors.grey.shade200),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.02),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Row(
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: SizedBox(
-                width: 68,
-                height: 68,
-                child: Image.network(
-                  recipe.imageUrl,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    color: const Color(0xFFF2F4F7),
-                    alignment: Alignment.center,
-                    child: Text(recipe.icon, style: const TextStyle(fontSize: 32)),
-                  ),
-                ),
+            // Icon Placeholder
+            Container(
+              width: 68,
+              height: 68,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8F5E9),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFC8E6C9)),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                recipe.icon,
+                style: const TextStyle(fontSize: 34),
               ),
             ),
             const SizedBox(width: 14),

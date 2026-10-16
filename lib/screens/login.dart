@@ -14,6 +14,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isPasswordVisible = false;
+  bool _isLoading = false;
 
   @override
   void dispose() {
@@ -22,25 +23,40 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _handleLogin() {
+  Future<void> _handleLogin() async {
     if (_formKey.currentState?.validate() ?? false) {
       final email = _emailController.text.trim();
       final password = _passwordController.text.trim();
 
-      AppData().login(email, password);
+      setState(() => _isLoading = true);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('เข้าสู่ระบบสำเร็จ ยินดีต้อนรับ! '),
-          backgroundColor: Color(0xFF207935),
-          duration: Duration(seconds: 1),
-        ),
-      );
+      final result = await AppData().login(email, password);
 
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const HomeScreen()),
-      );
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+
+      if (result['success'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${result['message']} ยินดีต้อนรับ!'),
+            backgroundColor: const Color(0xFF207935),
+            duration: const Duration(seconds: 1),
+          ),
+        );
+
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const HomeScreen()),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['message'] as String),
+            backgroundColor: Colors.redAccent,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
     }
   }
 
@@ -50,6 +66,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final regPasswordController = TextEditingController();
     final regConfirmPasswordController = TextEditingController();
     final regFormKey = GlobalKey<FormState>();
+    bool regLoading = false;
 
     showModalBottomSheet(
       context: context,
@@ -97,7 +114,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 6),
                       const Text(
-                        'สร้างบัญชีใหม่เพื่อเข้าใช้งานทุกฟังก์ชั่นในแอปพลิเคชัน',
+                        'สร้างบัญชีใหม่เพื่อบันทึกลงในฐานข้อมูล MySQL / XAMPP',
                         textAlign: TextAlign.center,
                         style: TextStyle(fontSize: 13, color: Color(0xFF8C919E)),
                       ),
@@ -184,34 +201,54 @@ class _LoginScreenState extends State<LoginScreen> {
                       SizedBox(
                         height: 52,
                         child: ElevatedButton(
-                          onPressed: () {
-                            if (regFormKey.currentState?.validate() ?? false) {
-                              AppData().register(
-                                regNameController.text.trim(),
-                                regEmailController.text.trim(),
-                                regPasswordController.text.trim(),
-                              );
-                              Navigator.pop(context); // Close bottom sheet
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('สมัครสมาชิกสำเร็จเรียบร้อยแล้ว! เข้าสู่ระบบให้อัตโนมัติ'),
-                                  backgroundColor: Color(0xFF207935),
-                                  duration: Duration(seconds: 2),
-                                ),
-                              );
-                              Navigator.pushReplacement(
-                                context,
-                                MaterialPageRoute(builder: (context) => const HomeScreen()),
-                              );
-                            }
-                          },
+                          onPressed: regLoading
+                              ? null
+                              : () async {
+                                  if (regFormKey.currentState?.validate() ?? false) {
+                                    setModalState(() => regLoading = true);
+
+                                    final result = await AppData().register(
+                                      regNameController.text.trim(),
+                                      regEmailController.text.trim(),
+                                      regPasswordController.text.trim(),
+                                    );
+
+                                    if (!mounted) return;
+                                    setModalState(() => regLoading = false);
+
+                                    final navigator = Navigator.of(context);
+                                    final messenger = ScaffoldMessenger.of(context);
+
+                                    if (result['success'] == true) {
+                                      if (navigator.canPop()) {
+                                        navigator.pop();
+                                      }
+                                      navigator.pushReplacement(
+                                        MaterialPageRoute(builder: (context) => const HomeScreen()),
+                                      );
+                                    } else {
+                                      messenger.showSnackBar(
+                                        SnackBar(
+                                          content: Text(result['message'] as String),
+                                          backgroundColor: Colors.redAccent,
+                                        ),
+                                      );
+                                    }
+                                  }
+                                },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF207935),
                             foregroundColor: Colors.white,
                             elevation: 0,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                           ),
-                          child: const Text('ยืนยันสมัครสมาชิก', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                          child: regLoading
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                )
+                              : const Text('ยืนยันสมัครสมาชิก', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -286,13 +323,68 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _handleGoogleSignIn() {
-    AppData().googleSignIn();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.account_circle_rounded, color: Color(0xFF4285F4)),
+            SizedBox(width: 8),
+            Text('เลือกบัญชี Google', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const CircleAvatar(
+                backgroundColor: Color(0xFF207935),
+                child: Text('N', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
+              title: const Text('Natcha Cook', style: TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: const Text('natcha.cook@gmail.com', style: TextStyle(fontSize: 12)),
+              onTap: () async {
+                Navigator.pop(context);
+                _processGoogleAuth('Natcha Cook', 'natcha.cook@gmail.com');
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const CircleAvatar(
+                backgroundColor: Colors.blueAccent,
+                child: Text('U', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
+              title: const Text('User Account', style: TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: const Text('user.recipe@gmail.com', style: TextStyle(fontSize: 12)),
+              onTap: () async {
+                Navigator.pop(context);
+                _processGoogleAuth('User Account', 'user.recipe@gmail.com');
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
+  Future<void> _processGoogleAuth(String name, String email) async {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('เข้าสู่ระบบด้วย Google เรียบร้อยแล้ว!'),
-        backgroundColor: Color(0xFF207935),
+        content: Text('กำลังบันทึกบัญชี Google เข้าสู่ฐานข้อมูล MySQL...'),
         duration: Duration(seconds: 1),
+      ),
+    );
+
+    final result = await AppData().googleSignIn(name, email);
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${result['message']} ยินดีต้อนรับคุณ $name!'),
+        backgroundColor: const Color(0xFF207935),
+        duration: const Duration(seconds: 1),
       ),
     );
 
@@ -368,7 +460,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 6),
                   // Subtitle
                   const Text(
-                    'เข้าสู่โลกแห่งสูตรอาหารแสนอร่อย',
+                    'เข้าสู่ระบบด้วยบัญชีของคุณเพื่อเข้าสู่แอป',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 14,
@@ -472,7 +564,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   SizedBox(
                     height: 52,
                     child: ElevatedButton(
-                      onPressed: _handleLogin,
+                      onPressed: _isLoading ? null : _handleLogin,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: primaryGreen,
                         foregroundColor: Colors.white,
@@ -481,13 +573,19 @@ class _LoginScreenState extends State<LoginScreen> {
                           borderRadius: BorderRadius.circular(14),
                         ),
                       ),
-                      child: const Text(
-                        'เข้าสู่ระบบ (Login)',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                      child: _isLoading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                            )
+                          : const Text(
+                              'เข้าสู่ระบบ (Login)',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                     ),
                   ),
                   const SizedBox(height: 16),

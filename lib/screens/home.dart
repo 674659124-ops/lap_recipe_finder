@@ -1,10 +1,12 @@
 import 'dart:io';
+import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:permission_handler/permission_handler.dart';
 import '../services/app_data.dart';
+import '../services/gemini_service.dart';
 import '../models/recipe.dart';
 import 'categories.dart';
 import 'detail.dart';
@@ -53,6 +55,9 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _appData.removeListener(_onAppDataChanged);
     _ingredientController.dispose();
+    if (_isListening) {
+      _speech.stop();
+    }
     super.dispose();
   }
 
@@ -83,7 +88,7 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('แก้ไขวัตถุดิบ', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('แก้ไขวัตถุดิบ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
         content: TextField(
           controller: controller,
           decoration: InputDecoration(
@@ -100,15 +105,18 @@ class _HomeScreenState extends State<HomeScreen> {
               _appData.editIngredient(index, controller.text);
               Navigator.pop(context);
             },
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF207935)),
-            child: const Text('บันทึก', style: TextStyle(color: Colors.white)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF207935),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('บันทึก'),
           ),
         ],
       ),
     );
   }
 
-  // --- PERMISSION RATIONALE DIALOG (MOBILE ONLY) ---
   Future<bool?> _showPermissionRationaleDialog({
     required String title,
     required String message,
@@ -153,7 +161,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // --- PERMANENTLY DENIED DIALOG (OPENS SETTINGS - MOBILE ONLY) ---
   void _showPermanentlyDeniedDialog({
     required String title,
     required String message,
@@ -205,15 +212,325 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // --- 1. VOICE SEARCH HANDLER (WITH kIsWeb BRANCHING) ---
+  // ============================================================================
+  // GEMINI AI RECIPE ASSISTANT MODAL
+  // ============================================================================
+  void _showGeminiAIAssistantModal() {
+    final promptController = TextEditingController(
+      text: _appData.userIngredients.isNotEmpty
+          ? _appData.userIngredients.join(', ')
+          : '',
+    );
+    final apiKeyController = TextEditingController(text: GeminiService.defaultApiKey);
+    bool isLoadingAI = false;
+    Recipe? generatedRecipe;
+    bool showApiKeyInput = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 20,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE8F5E9),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(Icons.auto_awesome, color: Color(0xFF207935), size: 24),
+                        ),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Gemini AI Recipe Assistant ✨',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF2D3142),
+                                ),
+                              ),
+                              Text(
+                                'ผู้ช่วยสร้างสูตรอาหารอัตโนมัติด้วยระบบ Gemini AI',
+                                style: TextStyle(fontSize: 12, color: Color(0xFF8C919E)),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Input Prompt / Ingredients
+                    const Text(
+                      'ใส่วัตถุดิบหรือไอเดียอาหารที่อยากกิน:',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF2D3142)),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: promptController,
+                      maxLines: 2,
+                      decoration: InputDecoration(
+                        hintText: 'เช่น ไข่ไก่ มะเขือเทศ หมูสับ อยากได้เมนูสไตล์ญี่ปุ่น...',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(color: Color(0xFF207935), width: 1.5),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Toggle Gemini API Key Input
+                    GestureDetector(
+                      onTap: () {
+                        setModalState(() {
+                          showApiKeyInput = !showApiKeyInput;
+                        });
+                      },
+                      child: Row(
+                        children: [
+                          Icon(
+                            showApiKeyInput ? Icons.key_rounded : Icons.key_off_rounded,
+                            size: 16,
+                            color: Colors.grey,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            showApiKeyInput ? 'ซ่อน Gemini API Key' : 'ตั้งค่า Gemini API Key (Optional)',
+                            style: const TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    if (showApiKeyInput) ...[
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: apiKeyController,
+                        obscureText: true,
+                        decoration: InputDecoration(
+                          hintText: 'ใส่ Gemini API Key (AIzaSy...)',
+                          labelText: 'Gemini API Key',
+                          prefixIcon: const Icon(Icons.security_rounded, size: 20),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onChanged: (val) {
+                          GeminiService.defaultApiKey = val.trim();
+                        },
+                      ),
+                    ],
+                    const SizedBox(height: 18),
+
+                    // Generate Button
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton.icon(
+                        onPressed: isLoadingAI
+                            ? null
+                            : () async {
+                                setModalState(() {
+                                  isLoadingAI = true;
+                                  generatedRecipe = null;
+                                });
+
+                                final recipe = await GeminiService.generateRecipeFromAI(
+                                  prompt: promptController.text,
+                                  userApiKey: apiKeyController.text,
+                                );
+
+                                if (mounted) {
+                                  setModalState(() {
+                                    isLoadingAI = false;
+                                    generatedRecipe = recipe;
+                                  });
+                                }
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF207935),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        icon: const Icon(Icons.auto_awesome, size: 20),
+                        label: const Text(
+                          '✨ ให้ Gemini AI คิดสูตรอาหาร',
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+
+                    if (isLoadingAI) ...[
+                      const SizedBox(height: 24),
+                      const Center(
+                        child: Column(
+                          children: [
+                            CircularProgressIndicator(color: Color(0xFF207935)),
+                            SizedBox(height: 12),
+                            Text(
+                              'Gemini AI กำลังคิดและรังสรรค์สูตรอาหารให้คุณ...',
+                              style: TextStyle(fontSize: 13, color: Color(0xFF207935), fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
+                    if (generatedRecipe != null) ...[
+                      const SizedBox(height: 20),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE8F5E9),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFFC8E6C9)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Text(generatedRecipe!.icon, style: const TextStyle(fontSize: 36)),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        generatedRecipe!.title,
+                                        style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                          color: Color(0xFF2D3142),
+                                        ),
+                                      ),
+                                      Text(
+                                        '${generatedRecipe!.prepTime} (เตรียม) • ${generatedRecipe!.cookTime} (ทำ)',
+                                        style: const TextStyle(fontSize: 12, color: Color(0xFF8C919E)),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              generatedRecipe!.description,
+                              style: const TextStyle(fontSize: 13, color: Color(0xFF2D3142)),
+                            ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'วัตถุดิบ:',
+                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF207935)),
+                            ),
+                            Wrap(
+                              spacing: 6,
+                              children: generatedRecipe!.ingredients
+                                  .map((ing) => Chip(
+                                        label: Text(ing, style: const TextStyle(fontSize: 11)),
+                                        backgroundColor: Colors.white,
+                                      ))
+                                  .toList(),
+                            ),
+                            const SizedBox(height: 14),
+                            SizedBox(
+                              width: double.infinity,
+                              height: 44,
+                              child: ElevatedButton.icon(
+                                onPressed: () {
+                                  Navigator.pop(context);
+                                  _appData.recipes.insert(0, generatedRecipe!);
+                                  _appData.createCommunityPost(
+                                    author: 'Gemini AI Chef ✨',
+                                    title: generatedRecipe!.title,
+                                    description: generatedRecipe!.description,
+                                    icon: generatedRecipe!.icon,
+                                    imageUrl: generatedRecipe!.imageUrl,
+                                  );
+
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('เพิ่ม "${generatedRecipe!.title}" ลงในแอปพลิเคชันเรียบร้อยแล้ว!'),
+                                      backgroundColor: const Color(0xFF207935),
+                                    ),
+                                  );
+
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(builder: (context) => DetailScreen(recipe: generatedRecipe!)),
+                                  );
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF207935),
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                icon: const Icon(Icons.add_circle_outline_rounded, size: 20),
+                                label: const Text('➕ บันทึกสูตรอาหารนี้ลงในแอป'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ============================================================================
+  // 1. VOICE SEARCH TOGGLE (START / STOP MICROPHONE)
+  // ============================================================================
   Future<void> _handleVoiceSearch() async {
+    // TOGGLE OFF
+    if (_isListening) {
+      await _stopListeningVoice();
+      return;
+    }
+
+    // TOGGLE ON
     if (kIsWeb) {
-      // Chrome Web Platform Voice Input Handler
       _startListeningVoice();
       return;
     }
 
-    // Native Mobile Permission Flow
     var status = await Permission.microphone.status;
 
     if (status.isGranted) {
@@ -281,18 +598,20 @@ class _HomeScreenState extends State<HomeScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('ตรวจพบเสียงพูด: "ไข่ไก่" - เพิ่มวัตถุดิบเรียบร้อยแล้ว'),
+              content: Text('เปิดค้นหาด้วยเสียงแล้ว (พูดคำว่า "ไข่ไก่", "มะเขือเทศ")'),
               backgroundColor: Color(0xFFF97906),
             ),
           );
         }
+        setState(() => _isListening = true);
       }
     } catch (_) {
       _appData.addIngredient('ไข่');
       if (mounted) {
+        setState(() => _isListening = true);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('เพิ่มวัตถุดิบด้วยเสียงเรียบร้อยแล้ว (Web Support)'),
+            content: Text('กำลังฟังเสียงพูด... (กดปุ่มอีกครั้งเพื่อปิด)'),
             backgroundColor: Color(0xFFF97906),
           ),
         );
@@ -300,19 +619,39 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // --- 2. CAMERA SCAN HANDLER (WITH kIsWeb BRANCHING) ---
+  Future<void> _stopListeningVoice() async {
+    try {
+      await _speech.stop();
+      await _speech.cancel();
+    } catch (_) {}
+
+    if (mounted) {
+      setState(() => _isListening = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('ปิดค้นหาด้วยเสียงเรียบร้อยแล้ว (Voice Search OFF)'),
+          backgroundColor: Colors.grey,
+          duration: Duration(seconds: 1),
+        ),
+      );
+    }
+  }
+
+  // ============================================================================
+  // 2. LIVE CAMERA STREAM & SCAN FEATURE (CAMERA PACKAGE SUPPORT)
+  // ============================================================================
   Future<void> _handleCameraScan() async {
     if (kIsWeb) {
-      // Chrome Web Platform Camera Capture Handler
-      _openCameraWeb();
+      // Open Live Video Camera Dialog on Web
+      _openLiveCameraDialog();
       return;
     }
 
-    // Native Mobile Permission Flow
+    // Native Mobile Permission Check
     var status = await Permission.camera.status;
 
     if (status.isGranted) {
-      _openCameraMobile();
+      _openLiveCameraDialog();
     } else if (status.isDenied) {
       bool? proceed = await _showPermissionRationaleDialog(
         title: 'ขอสิทธิ์ใช้งานกล้องถ่ายรูป',
@@ -323,14 +662,14 @@ class _HomeScreenState extends State<HomeScreen> {
       if (proceed == true) {
         var result = await Permission.camera.request();
         if (result.isGranted) {
-          _openCameraMobile();
+          _openLiveCameraDialog();
         } else if (result.isPermanentlyDenied) {
           _showPermanentlyDeniedDialog(
             title: 'ไม่อนุญาตสิทธิ์กล้องถ่ายรูป',
             message: 'คุณได้ปฏิเสธสิทธิ์กล้องถ่ายรูปแบบถาวร กรุณาเปิดอนุญาตในการตั้งค่าเพื่อใช้งานสแกนวัตถุดิบ',
           );
         } else {
-          _showPermissionDeniedSnackBar('ไม่สามารถสแกนวัตถุดิบได้เนื่องจากไม่ได้รับสิทธิ์กล้องถ่ายรูป');
+          _showCameraFallbackDialog('ไม่ได้รับอนุญาตสิทธิ์ใช้งานกล้อง');
         }
       }
     } else if (status.isPermanentlyDenied) {
@@ -341,50 +680,112 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _openCameraMobile() async {
-    try {
-      final XFile? pickedFile = await _picker.pickImage(source: ImageSource.camera);
-      if (pickedFile != null && mounted) {
-        final matchedRecipe = _appData.detectRecipeFromPhoto(File(pickedFile.path));
-        if (matchedRecipe != null) {
-          _showDetectionResultDialog(matchedRecipe);
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('ไม่พบสูตรอาหารที่ตรงกับภาพ กรุณาลองถ่ายใหม่อีกครั้ง'),
-            ),
-          );
-        }
-      }
-    } catch (_) {
-      if (mounted) {
-        final matchedRecipe = _appData.recipes[1]; // Tomato Omelette
-        _showDetectionResultDialog(matchedRecipe);
-      }
-    }
+  void _openLiveCameraDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => LiveCameraDialog(
+        onPhotoCaptured: (XFile capturedFile) {
+          Recipe? matchedRecipe;
+          if (kIsWeb) {
+            matchedRecipe = _appData.detectRecipeFromXFile(capturedFile.name);
+          } else {
+            matchedRecipe = _appData.detectRecipeFromPhoto(File(capturedFile.path));
+          }
+
+          if (matchedRecipe != null) {
+            _showDetectionResultDialog(matchedRecipe);
+          } else {
+            _showNoMatchDialog();
+          }
+        },
+        onFallbackGalleryRequested: () {
+          _pickFromGallery();
+        },
+      ),
+    );
   }
 
-  Future<void> _openCameraWeb() async {
+  Future<void> _pickFromGallery() async {
     try {
-      final XFile? pickedFile = await _picker.pickImage(source: ImageSource.camera);
+      final XFile? pickedFile = await _picker.pickImage(source: ImageSource.gallery);
       if (pickedFile != null && mounted) {
-        final matchedRecipe = _appData.detectRecipeFromXFile(pickedFile.name);
+        Recipe? matchedRecipe;
+        if (kIsWeb) {
+          matchedRecipe = _appData.detectRecipeFromXFile(pickedFile.name);
+        } else {
+          matchedRecipe = _appData.detectRecipeFromPhoto(File(pickedFile.path));
+        }
+
         if (matchedRecipe != null) {
           _showDetectionResultDialog(matchedRecipe);
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('ไม่พบสูตรอาหารที่ตรงกับภาพบน Web'),
-            ),
-          );
+          _showNoMatchDialog();
         }
       }
-    } catch (_) {
-      if (mounted) {
-        final matchedRecipe = _appData.recipes[1]; // Tomato Omelette
-        _showDetectionResultDialog(matchedRecipe);
-      }
-    }
+    } catch (_) {}
+  }
+
+  void _showCameraFallbackDialog(String reasonMessage) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Row(
+          children: [
+            Icon(Icons.camera_enhance_rounded, color: Colors.orangeAccent),
+            SizedBox(width: 8),
+            Text('กล้องไม่พร้อมใช้งาน', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Text(
+          '$reasonMessage คุณต้องการเลือกรูปภาพวัตถุดิบที่มีจากคลังภาพแทนหรือไม่?',
+          style: const TextStyle(fontSize: 14, color: Color(0xFF6C727F), height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('ยกเลิก', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              _pickFromGallery();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF207935),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            icon: const Icon(Icons.photo_library_rounded, size: 18),
+            label: const Text('เลือกจากคลังภาพ'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showNoMatchDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent),
+            SizedBox(width: 8),
+            Text('ไม่พบวัตถุดิบในภาพ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          ],
+        ),
+        content: const Text('ไม่พบสูตรอาหารที่ตรงกับภาพถ่ายนี้ กรุณาลองถ่ายภาพวัตถุดิบชัดๆ อีกครั้ง'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('ตกลง', style: TextStyle(color: Color(0xFF207935))),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showDetectionResultDialog(Recipe recipe) {
@@ -402,13 +803,18 @@ class _HomeScreenState extends State<HomeScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: Image.network(
-                recipe.imageUrl,
-                height: 140,
-                width: double.infinity,
-                fit: BoxFit.cover,
+            Container(
+              height: 120,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8F5E9),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFC8E6C9)),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                recipe.icon,
+                style: const TextStyle(fontSize: 54),
               ),
             ),
             const SizedBox(height: 12),
@@ -440,6 +846,7 @@ class _HomeScreenState extends State<HomeScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF207935),
               foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
             child: const Text('ดูสูตรอาหาร'),
           ),
@@ -531,6 +938,58 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Gemini AI Assistant Callout Banner
+              InkWell(
+                onTap: _showGeminiAIAssistantModal,
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF207935), Color(0xFF378F45)],
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: primaryGreen.withOpacity(0.25),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.auto_awesome, color: Colors.amberAccent, size: 24),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Gemini AI คิดสูตรอาหารให้อัตโนมัติ ✨',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              'พิมพ์วัตถุดิบ ให้ Gemini AI รังสรรค์สูตรใหม่ทันที',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 16),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+
               // Section Title: ใส่วัตถุดิบที่คุณมี
               const Text(
                 'ใส่วัตถุดิบที่คุณมี',
@@ -542,11 +1001,12 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 12),
 
-              // Search Input Row
+              // Search Input Row Card
               Container(
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.grey.shade200),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withOpacity(0.02),
@@ -577,7 +1037,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     Padding(
                       padding: const EdgeInsets.only(right: 6.0),
-                      child: ElevatedButton(
+                      child: ElevatedButton.icon(
                         onPressed: _addIngredient,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: primaryGreen,
@@ -586,9 +1046,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         ),
-                        child: const Text(
+                        icon: const Icon(Icons.add_rounded, size: 18),
+                        label: const Text(
                           'ADD',
                           style: TextStyle(
                             fontSize: 14,
@@ -647,32 +1108,39 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: InkWell(
                       onTap: _handleVoiceSearch,
                       borderRadius: BorderRadius.circular(16),
-                      child: Container(
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
                         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: _isListening
-                                ? [Colors.red, Colors.redAccent]
+                                ? [Colors.redAccent, Colors.red]
                                 : [const Color(0xFFFF9800), const Color(0xFFF97906)],
                           ),
                           borderRadius: BorderRadius.circular(16),
-                          boxShadow: const [
+                          boxShadow: [
                             BoxShadow(
-                              color: Color(0x4DFF9800),
-                              blurRadius: 8,
-                              offset: Offset(0, 3),
+                              color: _isListening
+                                  ? Colors.redAccent.withOpacity(0.4)
+                                  : const Color(0xFFFF9800).withOpacity(0.3),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
                             ),
                           ],
                         ),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(_isListening ? Icons.graphic_eq_rounded : Icons.mic_rounded, size: 20, color: Colors.white),
+                            Icon(
+                              _isListening ? Icons.graphic_eq_rounded : Icons.mic_rounded,
+                              size: 20,
+                              color: Colors.white,
+                            ),
                             const SizedBox(width: 8),
                             Text(
-                              _isListening ? 'กำลังฟัง...' : 'ค้นหาด้วยเสียง',
+                              _isListening ? 'กำลังฟัง... (กดปิด)' : 'ค้นหาด้วยเสียง',
                               style: const TextStyle(
-                                fontSize: 14,
+                                fontSize: 13,
                                 fontWeight: FontWeight.bold,
                                 color: Colors.white,
                               ),
@@ -696,7 +1164,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           borderRadius: BorderRadius.circular(16),
                           boxShadow: const [
                             BoxShadow(
-                              color: Color(0x4D00BFA5),
+                              color: Color(0x3300BFA5),
                               blurRadius: 8,
                               offset: Offset(0, 3),
                             ),
@@ -710,7 +1178,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             Text(
                               'สแกนวัตถุดิบ',
                               style: TextStyle(
-                                fontSize: 14,
+                                fontSize: 13,
                                 fontWeight: FontWeight.bold,
                                 color: Colors.white,
                               ),
@@ -826,7 +1294,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             style: TextStyle(fontSize: 12, color: Color(0xFF8C919E)),
                           ),
                           const SizedBox(height: 12),
-                          ElevatedButton(
+                          ElevatedButton.icon(
                             onPressed: () {
                               _appData.clearIngredients();
                               _appData.setActiveCategory(null);
@@ -834,8 +1302,10 @@ class _HomeScreenState extends State<HomeScreen> {
                             style: ElevatedButton.styleFrom(
                               backgroundColor: primaryGreen,
                               foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                             ),
-                            child: const Text('ดูเมนูทั้งหมด'),
+                            icon: const Icon(Icons.refresh_rounded, size: 18),
+                            label: const Text('ดูเมนูทั้งหมด'),
                           ),
                         ],
                       ),
@@ -909,7 +1379,7 @@ class _HomeScreenState extends State<HomeScreen> {
           border: Border.all(color: Colors.grey.shade200),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.03),
+              color: Colors.black.withOpacity(0.02),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -917,32 +1387,19 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         child: Row(
           children: [
-            // Recipe Image Container
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: SizedBox(
-                width: 76,
-                height: 76,
-                child: Image.network(
-                  recipe.imageUrl,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    color: const Color(0xFFF2F4F7),
-                    alignment: Alignment.center,
-                    child: Text(
-                      recipe.icon,
-                      style: const TextStyle(fontSize: 36),
-                    ),
-                  ),
-                  loadingBuilder: (context, child, progress) {
-                    if (progress == null) return child;
-                    return Container(
-                      color: const Color(0xFFF2F4F7),
-                      alignment: Alignment.center,
-                      child: Text(recipe.icon, style: const TextStyle(fontSize: 36)),
-                    );
-                  },
-                ),
+            // Food Icon Container
+            Container(
+              width: 76,
+              height: 76,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8F5E9),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFC8E6C9)),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                recipe.icon,
+                style: const TextStyle(fontSize: 38),
               ),
             ),
             const SizedBox(width: 14),
@@ -955,7 +1412,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
                           color: const Color(0xFFE8F5E9),
                           borderRadius: BorderRadius.circular(6),
@@ -1027,6 +1484,206 @@ class _HomeScreenState extends State<HomeScreen> {
                 color: recipe.isFavorite ? Colors.redAccent : const Color(0xFF8C919E),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// LIVE CAMERA DIALOG (REAL LIVE CAMERA PREVIEW VIA CAMERA PACKAGE)
+// ============================================================================
+class LiveCameraDialog extends StatefulWidget {
+  final Function(XFile file) onPhotoCaptured;
+  final VoidCallback onFallbackGalleryRequested;
+
+  const LiveCameraDialog({
+    super.key,
+    required this.onPhotoCaptured,
+    required this.onFallbackGalleryRequested,
+  });
+
+  @override
+  State<LiveCameraDialog> createState() => _LiveCameraDialogState();
+}
+
+class _LiveCameraDialogState extends State<LiveCameraDialog> {
+  CameraController? _controller;
+  bool _isInitialized = false;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeCamera();
+  }
+
+  Future<void> _initializeCamera() async {
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        setState(() {
+          _errorMessage = 'ไม่พบกล้องในอุปกรณ์นี้';
+        });
+        return;
+      }
+
+      final camera = cameras.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.back,
+        orElse: () => cameras.first,
+      );
+
+      _controller = CameraController(
+        camera,
+        ResolutionPreset.medium,
+        enableAudio: false,
+      );
+
+      await _controller!.initialize();
+
+      if (mounted) {
+        setState(() {
+          _isInitialized = true;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'เบราว์เซอร์หรืออุปกรณ์ไม่ได้รับอนุญาตให้ใช้กล้อง';
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _takePicture() async {
+    if (_controller == null || !_controller!.value.isInitialized || _controller!.value.isTakingPicture) {
+      return;
+    }
+
+    try {
+      final file = await _controller!.takePicture();
+      if (mounted) {
+        Navigator.pop(context);
+        widget.onPhotoCaptured(file);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('เกิดข้อผิดพลาดในการถ่ายภาพ: $e')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      clipBehavior: Clip.antiAlias,
+      child: Container(
+        width: kIsWeb ? 480 : double.infinity,
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.videocam_rounded, color: Color(0xFF207935)),
+                    SizedBox(width: 8),
+                    Text(
+                      'สแกนวัตถุดิบด้วยกล้องสด',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF2D3142)),
+                    ),
+                  ],
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            if (_errorMessage != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24.0, horizontal: 16.0),
+                child: Column(
+                  children: [
+                    const Icon(Icons.videocam_off_rounded, size: 54, color: Colors.orangeAccent),
+                    const SizedBox(height: 12),
+                    Text(
+                      _errorMessage!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 14, color: Color(0xFF2D3142)),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        widget.onFallbackGalleryRequested();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF207935),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      icon: const Icon(Icons.photo_library_rounded, size: 18),
+                      label: const Text('เลือกจากคลังภาพแทน'),
+                    ),
+                  ],
+                ),
+              )
+            else if (!_isInitialized)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 40.0),
+                child: Column(
+                  children: [
+                    CircularProgressIndicator(color: Color(0xFF207935)),
+                    SizedBox(height: 16),
+                    Text('กำลังเปิดกล้องวิดีโอสด...', style: TextStyle(color: Color(0xFF6C727F))),
+                  ],
+                ),
+              )
+            else
+              Column(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: AspectRatio(
+                      aspectRatio: _controller!.value.aspectRatio,
+                      child: CameraPreview(_controller!),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton.icon(
+                      onPressed: _takePicture,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF207935),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: const Icon(Icons.camera_alt_rounded, size: 22),
+                      label: const Text(
+                        'ถ่ายภาพวัตถุดิบ (Capture Photo)',
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
           ],
         ),
       ),

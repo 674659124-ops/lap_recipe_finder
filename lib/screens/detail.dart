@@ -37,7 +37,6 @@ class _DetailScreenState extends State<DetailScreen> {
     if (widget.recipe != null) {
       _currentRecipe = widget.recipe!;
     } else {
-      // Find or fallback to recipe
       final matches = _appData.recipes.where((r) => r.title == widget.recipeTitle);
       if (matches.isNotEmpty) {
         _currentRecipe = matches.first;
@@ -87,7 +86,7 @@ class _DetailScreenState extends State<DetailScreen> {
       title: _currentRecipe.title,
       description: _currentRecipe.description,
       icon: _currentRecipe.icon,
-      imageUrl: _currentRecipe.imageUrl,
+      imageUrl: '',
     );
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -159,58 +158,36 @@ class _DetailScreenState extends State<DetailScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Food Header Banner Image / Container
-              ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 200,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      Image.network(
-                        _currentRecipe.imageUrl,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => Container(
-                          color: const Color(0xFFFFF3E0),
-                          child: Center(
-                            child: Text(
-                              _currentRecipe.icon,
-                              style: const TextStyle(fontSize: 70),
-                            ),
-                          ),
-                        ),
+              // Food Icon Banner Card (Replacing Image with Pastel Icon Placeholder)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8F5E9),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFFC8E6C9)),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      _currentRecipe.icon,
+                      style: const TextStyle(fontSize: 72),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      _currentRecipe.title,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF2D3142),
                       ),
-                      Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.transparent,
-                              Colors.black.withOpacity(0.7),
-                            ],
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        bottom: 16,
-                        left: 16,
-                        right: 16,
-                        child: Text(
-                          _currentRecipe.title,
-                          style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
 
               // Description
               Text(
@@ -393,7 +370,7 @@ class _DetailScreenState extends State<DetailScreen> {
               ),
               const SizedBox(height: 28),
 
-              // Bottom Buttons Row (Add to Meal Planner & Share to Community)
+              // Bottom Buttons Row
               Row(
                 children: [
                   Expanded(

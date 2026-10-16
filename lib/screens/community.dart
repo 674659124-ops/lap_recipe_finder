@@ -92,7 +92,6 @@ class _CommunityScreenState extends State<CommunityScreen> {
     final titleController = TextEditingController();
     final descController = TextEditingController();
     final authorController = TextEditingController(text: _appData.userName);
-    final imageUrlController = TextEditingController();
     String selectedIcon = '🍳';
 
     final iconsList = ['🍳', '🍲', '🥗', '🎂', '🧇', '🍕', '🍰', '🥤', '🍚', '🍔'];
@@ -175,18 +174,6 @@ class _CommunityScreenState extends State<CommunityScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    // Image URL input (optional)
-                    TextField(
-                      controller: imageUrlController,
-                      decoration: InputDecoration(
-                        labelText: 'ลิงก์รูปภาพอาหาร (ถ้ามี)',
-                        hintText: 'https://images.unsplash.com/...',
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
                     // Icon Selector
                     const Text(
                       'เลือกไอคอนอาหาร:',
@@ -232,12 +219,11 @@ class _CommunityScreenState extends State<CommunityScreen> {
                     SizedBox(
                       width: double.infinity,
                       height: 50,
-                      child: ElevatedButton(
+                      child: ElevatedButton.icon(
                         onPressed: () {
                           final title = titleController.text.trim();
                           final desc = descController.text.trim();
                           final author = authorController.text.trim();
-                          final imgUrl = imageUrlController.text.trim();
 
                           if (title.isNotEmpty) {
                             _appData.createCommunityPost(
@@ -245,7 +231,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
                               title: title,
                               description: desc.isNotEmpty ? desc : 'สูตรอาหารแสนอร่อยโดย $author',
                               icon: selectedIcon,
-                              imageUrl: imgUrl,
+                              imageUrl: '',
                             );
 
                             Navigator.pop(context);
@@ -262,7 +248,8 @@ class _CommunityScreenState extends State<CommunityScreen> {
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
-                        child: const Text('โพสต์สูตรอาหาร', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        icon: const Icon(Icons.add_rounded, size: 20),
+                        label: const Text('โพสต์สูตรอาหาร', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                       ),
                     ),
                   ],
@@ -519,7 +506,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
           border: Border.all(color: Colors.grey.shade200),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.03),
+              color: Colors.black.withOpacity(0.02),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -571,7 +558,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
             ),
             const SizedBox(height: 12),
 
-            // Content Body Row (Text & Image Icon)
+            // Content Body Row (Text & Food Icon)
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -600,24 +587,19 @@ class _CommunityScreenState extends State<CommunityScreen> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                // Food Image / Thumbnail
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: SizedBox(
-                    width: 64,
-                    height: 64,
-                    child: Image.network(
-                      post.imageUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) => Container(
-                        color: const Color(0xFFF2F4F7),
-                        alignment: Alignment.center,
-                        child: Text(
-                          post.icon,
-                          style: const TextStyle(fontSize: 32),
-                        ),
-                      ),
-                    ),
+                // Food Icon Placeholder
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE8F5E9),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFC8E6C9)),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    post.icon,
+                    style: const TextStyle(fontSize: 32),
                   ),
                 ),
               ],

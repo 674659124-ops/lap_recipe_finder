@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/recipe.dart';
+import 'api_service.dart';
 
 class AppData extends ChangeNotifier {
   static final AppData _instance = AppData._internal();
@@ -9,12 +10,13 @@ class AppData extends ChangeNotifier {
   AppData._internal() {
     _initInitialData();
     _loadFromPreferences();
+    _syncWithDatabase();
   }
 
   // User State
   String userName = 'Natcha Cook';
   String userEmail = 'natcha.cook@email.com';
-  bool isLoggedIn = true;
+  bool isLoggedIn = false;
 
   // Added ingredients in Home Screen
   final List<String> userIngredients = [];
@@ -39,7 +41,7 @@ class AppData extends ChangeNotifier {
   Future<void> _loadFromPreferences() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      isLoggedIn = prefs.getBool('isLoggedIn') ?? true;
+      isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
       userName = prefs.getString('userName') ?? 'Natcha Cook';
       userEmail = prefs.getString('userEmail') ?? 'natcha.cook@email.com';
       final savedIngredients = prefs.getStringList('userIngredients');
@@ -59,6 +61,15 @@ class AppData extends ChangeNotifier {
       await prefs.setString('userEmail', userEmail);
       await prefs.setStringList('userIngredients', userIngredients);
     } catch (_) {}
+  }
+
+  Future<void> _syncWithDatabase() async {
+    final dbRecipes = await ApiService.fetchRecipes();
+    if (dbRecipes != null && dbRecipes.isNotEmpty) {
+      _recipes.clear();
+      _recipes.addAll(dbRecipes);
+      notifyListeners();
+    }
   }
 
   void _initInitialData() {
@@ -359,117 +370,6 @@ class AppData extends ChangeNotifier {
       isFavorite: false,
     );
 
-    // 9. สปาเก็ตตี้คาโบนารา
-    final carbonara = Recipe(
-      id: 'r9',
-      title: 'สปาเก็ตตี้คาโบนารา',
-      description: 'สปาเก็ตตี้คาโบนาราสูตรดั้งเดิม ครีมมี่หอมมันจากไข่แดงและพาร์เมซานชีสแท้',
-      prepTime: '10 นาที',
-      cookTime: '15 นาที',
-      difficulty: 'ปานกลาง',
-      icon: '🍝',
-      imageUrl: 'https://images.unsplash.com/photo-1612874742237-6526221588e3?w=800',
-      category: 'International',
-      ingredients: [
-        'เส้นสปาเก็ตตี้ 100 กรัม',
-        'เบคอน หรือ คอนแชลเล่ 60 กรัม',
-        'ไข่ไก่ (เฉพาะไข่แดง) 2 ฟอง',
-        'พาร์เมซานชีสขูด 40 กรัม',
-        'พริกไทยดำบดใหม่ 1 ช้อนชา',
-        'เกลือสำหรับต้มเส้น',
-      ],
-      tools: ['หม้อต้มเส้น', 'กระทะทอดเบคอน', 'ชามผสมซอส'],
-      steps: [
-        'ต้มเส้นสปาเก็ตตี้ในน้ำเดือดใส่เกลือ นานประมาณ 8-9 นาทีจนได้ระดับ Al Dente',
-        'ผสมไข่แดงกับพาร์เมซานชีสขูดและพริกไทยดำบด คนให้เข้ากัน',
-        'ทอดเบคอนในกระทะจนกรอบและมีน้ำมันเบคอนออกมา',
-        'ใส่เส้นสปาเก็ตตี้ร้อนๆ ลงในกระทะเบคอน ปิดไฟ แล้วเทส่วนผสมไข่ชีสลงไปคลุกเร็วๆ',
-        'ใส่น้ำต้มเส้นเล็กน้อยเพื่อให้ซอสเนียนนุ่ม ตักใส่จานโรยพริกไทยเสิร์ฟ',
-      ],
-      tips: ['อย่าคลุกซอสขณะกระทะร้อนจัด เพราะไข่จะสุกเป็นก้อน ให้ปิดไฟก่อนคลุกซอส'],
-      nutrition: {
-        'พลังงาน': '450 kcal',
-        'โปรตีน': '18 g',
-        'ไขมัน': '24 g',
-        'คาร์โบไฮเดรต': '42 g',
-      },
-      isFavorite: true,
-    );
-
-    // 10. ต้มยำกุ้งน้ำข้น
-    final tomYum = Recipe(
-      id: 'r10',
-      title: 'ต้มยำกุ้งน้ำข้น',
-      description: 'ต้มยำกุ้งน้ำข้นรสจัดจ้าน เปรี้ยว เผ็ด หอมกลิ่นสมุนไพร ข่า ตะไคร้ ใบมะกรูด',
-      prepTime: '12 นาที',
-      cookTime: '10 นาที',
-      difficulty: 'ปานกลาง',
-      icon: '🍲',
-      imageUrl: 'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?w=800',
-      category: 'Thai',
-      ingredients: [
-        'กุ้งแม่น้ำสด 4 ตัว',
-        'เห็ดฟาง 100 กรัม',
-        'ข่าหั่นแว่น ตะไคร้ทุบ ใบมะกรูด',
-        'พริกขี้หนูสวนทุบ 10 เม็ด',
-        'น้ำพริกเผา 1.5 ช้อนโต๊ะ',
-        'นมข้นจืด 3 ช้อนโต๊ะ',
-        'น้ำปลา 2 ช้อนโต๊ะ',
-        'น้ำมะนาวสด 2.5 ช้อนโต๊ะ',
-      ],
-      tools: ['หม้อต้ม', 'ทัพพี'],
-      steps: [
-        'ตั้งหม้อใส่น้ำต้มจนเดือด ใส่ข่า ตะไคร้ ใบมะกรูด ลงไปต้มจนหอมสมุนไพร',
-        'ใส่เห็ดฟางและกุ้งแม่น้ำสดลงไป ต้มจนกุ้งเริ่มสุกเปลี่ยนเป็นสีส้ม',
-        'ใส่น้ำพริกเผา นมข้นจืด และน้ำปลา คนให้เข้ากันจนน้ำซุปกลายเป็นสีส้มสวยงาม',
-        'ปิดไฟ จากนั้นใส่น้ำมะนาวสดและพริกขี้หนูทุบ คนให้เข้ากัน ตักใส่ชามเสิร์ฟ',
-      ],
-      tips: ['ใส่น้ำมะนาวหลังจากปิดไฟแล้ว เพื่อไม่ให้น้ำมะนาวขม'],
-      nutrition: {
-        'พลังงาน': '260 kcal',
-        'โปรตีน': '22 g',
-        'ไขมัน': '12 g',
-        'คาร์โบไฮเดรต': '16 g',
-      },
-      isFavorite: false,
-    );
-
-    // 11. ผัดผักรวมมิตร
-    final stirVeggie = Recipe(
-      id: 'r11',
-      title: 'ผัดผักรวมมิตร',
-      description: 'ผัดผักสดกรอบเพื่อสุขภาพ อุดมด้วยวิตามิน ทำง่ายภายใน 8 นาที',
-      prepTime: '5 นาที',
-      cookTime: '5 นาที',
-      difficulty: 'ง่าย',
-      icon: '🥦',
-      imageUrl: 'https://images.unsplash.com/photo-1540420773420-3366772f4999?w=800',
-      category: 'Vegetarian',
-      ingredients: [
-        'บล็อกโคลี & บร็อกโคลี่ 100 กรัม',
-        'แครอทหั่นแว่น 50 กรัม',
-        'เห็ดหอมสด 4 ดอก',
-        'กระเทียมสับ 1 ช้อนชา',
-        'ซอสเทอริยากิ / ซีอิ๊วขาวมังสวิรัติ 1.5 ช้อนโต๊ะ',
-        'น้ำมันพืช 1 ช้อนโต๊ะ',
-      ],
-      tools: ['กระทะผัด', 'ตะหลิว'],
-      steps: [
-        'ลวกบล็อกโคลีและแครอทในน้ำเดือด 1 นาทีแล้วตักน็อคน้ำเย็น เพื่อให้ผักกรอบสีสวย',
-        'ตั้งกระทะใส่น้ำมัน เจียวกระเทียมสับจนหอม',
-        'ใส่เห็ดหอมและผักลวกลงไปผัดด้วยไฟแรง',
-        'ปรุงรสด้วยซีอิ๊วขาว ผัดเร็วๆ 1 นาทีแล้วปิดไฟ ตักใส่จาน',
-      ],
-      tips: ['น็อคผักในน้ำเย็นจัดหลังลวก จะช่วยรักษาความสดกรอบและสีเขียวสดของผัก'],
-      nutrition: {
-        'พลังงาน': '140 kcal',
-        'โปรตีน': '4 g',
-        'ไขมัน': '6 g',
-        'คาร์โบไฮเดรต': '18 g',
-      },
-      isFavorite: false,
-    );
-
     _recipes.addAll([
       eggFriedRice,
       tomatoOmelette,
@@ -479,9 +379,6 @@ class AppData extends ChangeNotifier {
       chickenSalad,
       chocolateCake,
       waffle,
-      carbonara,
-      tomYum,
-      stirVeggie,
     ]);
 
     // Initial Meal Plan for 15 May 2024
@@ -552,32 +449,81 @@ class AppData extends ChangeNotifier {
     ]);
   }
 
-  // User Authentication Methods
-  void login(String email, String password) {
-    userEmail = email.isNotEmpty ? email : 'natcha.cook@email.com';
-    userName = email.contains('@') ? email.split('@').first : 'Natcha Cook';
-    isLoggedIn = true;
-    _saveToPreferences();
-    notifyListeners();
+  // Strict User Authentication Methods with Database Attempt
+  Future<Map<String, dynamic>> login(String email, String password) async {
+    // 1. Try XAMPP Database Login First
+    final result = await ApiService.login(email, password);
+    if (result['success'] == true && result['user'] != null) {
+      userName = result['user']['name'] ?? 'Natcha Cook';
+      userEmail = result['user']['email'] ?? email;
+      isLoggedIn = true;
+      _saveToPreferences();
+      notifyListeners();
+      return {'success': true, 'message': 'เข้าสู่ระบบสำเร็จ'};
+    }
+
+    // 2. Check registered local emails list
+    if (registeredEmails.contains(email.toLowerCase())) {
+      userEmail = email;
+      userName = email.contains('@') ? email.split('@').first : 'Natcha Cook';
+      isLoggedIn = true;
+      _saveToPreferences();
+      notifyListeners();
+      return {'success': true, 'message': 'เข้าสู่ระบบสำเร็จ'};
+    }
+
+    // Strict Failure: Do NOT authenticate if account doesn't exist in DB!
+    return {
+      'success': false,
+      'message': result['message'] ?? 'ไม่พบบัญชีผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง กรุณาสมัครสมาชิกก่อนเข้าใช้งาน',
+    };
   }
 
-  void register(String name, String email, String password) {
+  Future<Map<String, dynamic>> register(String name, String email, String password) async {
+    final result = await ApiService.register(name, email, password);
+    if (result['success'] == true) {
+      userName = name.isNotEmpty ? name : 'Natcha Cook';
+      userEmail = email.isNotEmpty ? email : 'natcha.cook@email.com';
+      if (!registeredEmails.contains(userEmail)) {
+        registeredEmails.add(userEmail);
+      }
+      isLoggedIn = true;
+      _saveToPreferences();
+      notifyListeners();
+      return {'success': true, 'message': 'สมัครสมาชิกสำเร็จ'};
+    }
+
+    // Fallback registration save
     userName = name.isNotEmpty ? name : 'Natcha Cook';
     userEmail = email.isNotEmpty ? email : 'natcha.cook@email.com';
-    if (!registeredEmails.contains(userEmail)) {
-      registeredEmails.add(userEmail);
+    if (!registeredEmails.contains(userEmail.toLowerCase())) {
+      registeredEmails.add(userEmail.toLowerCase());
     }
     isLoggedIn = true;
     _saveToPreferences();
     notifyListeners();
+    return {'success': true, 'message': 'สมัครสมาชิกเรียบร้อยแล้ว'};
   }
 
-  void googleSignIn() {
-    userName = 'Natcha Cook';
-    userEmail = 'natcha.cook@gmail.com';
+  // Google Login / Register with XAMPP MySQL
+  Future<Map<String, dynamic>> googleSignIn(String name, String email) async {
+    final result = await ApiService.googleSignIn(name, email);
+    if (result['success'] == true && result['user'] != null) {
+      userName = result['user']['name'] ?? name;
+      userEmail = result['user']['email'] ?? email;
+      isLoggedIn = true;
+      _saveToPreferences();
+      notifyListeners();
+      return {'success': true, 'message': 'เข้าสู่ระบบด้วย Google สำเร็จ'};
+    }
+
+    // Fallback save locally
+    userName = name;
+    userEmail = email;
     isLoggedIn = true;
     _saveToPreferences();
     notifyListeners();
+    return {'success': true, 'message': 'เข้าสู่ระบบด้วย Google เรียบร้อยแล้ว'};
   }
 
   void logout() {
