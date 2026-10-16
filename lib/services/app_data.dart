@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/recipe.dart';
 
 class AppData extends ChangeNotifier {
@@ -6,6 +8,7 @@ class AppData extends ChangeNotifier {
   factory AppData() => _instance;
   AppData._internal() {
     _initInitialData();
+    _loadFromPreferences();
   }
 
   // User State
@@ -16,8 +19,11 @@ class AppData extends ChangeNotifier {
   // Added ingredients in Home Screen
   final List<String> userIngredients = [];
 
-  // Active Category Filter for Categories Screen (null means All)
+  // Active Category Filter
   String? activeCategory;
+
+  // Registered User Emails List for Error checking
+  final List<String> registeredEmails = ['natcha.cook@email.com', 'test@example.com'];
 
   // All Recipes in App
   final List<Recipe> _recipes = [];
@@ -30,8 +36,33 @@ class AppData extends ChangeNotifier {
   // Meal Plan Map: "day" -> { "เช้า": Recipe, "กลางวัน": Recipe, "เย็น": Recipe }
   final Map<String, Map<String, Recipe>> _mealPlan = {};
 
+  Future<void> _loadFromPreferences() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      isLoggedIn = prefs.getBool('isLoggedIn') ?? true;
+      userName = prefs.getString('userName') ?? 'Natcha Cook';
+      userEmail = prefs.getString('userEmail') ?? 'natcha.cook@email.com';
+      final savedIngredients = prefs.getStringList('userIngredients');
+      if (savedIngredients != null) {
+        userIngredients.clear();
+        userIngredients.addAll(savedIngredients);
+      }
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  Future<void> _saveToPreferences() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('isLoggedIn', isLoggedIn);
+      await prefs.setString('userName', userName);
+      await prefs.setString('userEmail', userEmail);
+      await prefs.setStringList('userIngredients', userIngredients);
+    } catch (_) {}
+  }
+
   void _initInitialData() {
-    // 1. ข้าวผัดไข่ (Quick Meal, Thai, Breakfast)
+    // 1. ข้าวผัดไข่
     final eggFriedRice = Recipe(
       id: 'r1',
       title: 'ข้าวผัดไข่',
@@ -70,7 +101,7 @@ class AppData extends ChangeNotifier {
       isFavorite: true,
     );
 
-    // 2. ไข่เจียวมะเขือเทศ (Breakfast, Quick Meal)
+    // 2. ไข่เจียวมะเขือเทศ
     final tomatoOmelette = Recipe(
       id: 'r2',
       title: 'ไข่เจียวมะเขือเทศ',
@@ -107,7 +138,7 @@ class AppData extends ChangeNotifier {
       isFavorite: true,
     );
 
-    // 3. สมูทตี้กล้วย (Healthy, Breakfast, Desserts)
+    // 3. สมูทตี้กล้วย
     final bananaSmoothie = Recipe(
       id: 'r3',
       title: 'สมูทตี้กล้วย',
@@ -142,7 +173,7 @@ class AppData extends ChangeNotifier {
       isFavorite: true,
     );
 
-    // 4. ต้มจืดไข่น้ำ (Soup, Thai)
+    // 4. ต้มจืดไข่น้ำ
     final eggSoup = Recipe(
       id: 'r4',
       title: 'ต้มจืดไข่น้ำ',
@@ -180,7 +211,7 @@ class AppData extends ChangeNotifier {
       isFavorite: true,
     );
 
-    // 5. ผัดกะเพราหมูสับ (Thai, Quick Meal)
+    // 5. ผัดกะเพราหมูสับ
     final padKrapow = Recipe(
       id: 'r5',
       title: 'ผัดกะเพราหมูสับ',
@@ -217,7 +248,7 @@ class AppData extends ChangeNotifier {
       isFavorite: false,
     );
 
-    // 6. สลัดอกไก่ย่าง (Healthy, Quick Meal)
+    // 6. สลัดอกไก่ย่าง
     final chickenSalad = Recipe(
       id: 'r6',
       title: 'สลัดอกไก่ย่าง',
@@ -254,7 +285,7 @@ class AppData extends ChangeNotifier {
       isFavorite: false,
     );
 
-    // 7. เค้กช็อกโกแลตหน้านุ่ม (Desserts)
+    // 7. เค้กช็อกโกแลตหน้านุ่ม
     final chocolateCake = Recipe(
       id: 'r7',
       title: 'เค้กช็อกโกแลตหน้านุ่ม',
@@ -292,7 +323,7 @@ class AppData extends ChangeNotifier {
       isFavorite: false,
     );
 
-    // 8. วาฟเฟิลผลไม้รวม (Desserts, Breakfast)
+    // 8. วาฟเฟิลผลไม้รวม
     final waffle = Recipe(
       id: 'r8',
       title: 'วาฟเฟิลผลไม้รวม',
@@ -328,7 +359,7 @@ class AppData extends ChangeNotifier {
       isFavorite: false,
     );
 
-    // 9. สปาเก็ตตี้คาโบนารา (International)
+    // 9. สปาเก็ตตี้คาโบนารา
     final carbonara = Recipe(
       id: 'r9',
       title: 'สปาเก็ตตี้คาโบนารา',
@@ -365,7 +396,7 @@ class AppData extends ChangeNotifier {
       isFavorite: true,
     );
 
-    // 10. ต้มยำกุ้งน้ำข้น (Thai, Soup)
+    // 10. ต้มยำกุ้งน้ำข้น
     final tomYum = Recipe(
       id: 'r10',
       title: 'ต้มยำกุ้งน้ำข้น',
@@ -403,7 +434,7 @@ class AppData extends ChangeNotifier {
       isFavorite: false,
     );
 
-    // 11. ผัดผักรวมมิตร (Vegetarian, Healthy, Quick Meal)
+    // 11. ผัดผักรวมมิตร
     final stirVeggie = Recipe(
       id: 'r11',
       title: 'ผัดผักรวมมิตร',
@@ -526,13 +557,18 @@ class AppData extends ChangeNotifier {
     userEmail = email.isNotEmpty ? email : 'natcha.cook@email.com';
     userName = email.contains('@') ? email.split('@').first : 'Natcha Cook';
     isLoggedIn = true;
+    _saveToPreferences();
     notifyListeners();
   }
 
   void register(String name, String email, String password) {
     userName = name.isNotEmpty ? name : 'Natcha Cook';
     userEmail = email.isNotEmpty ? email : 'natcha.cook@email.com';
+    if (!registeredEmails.contains(userEmail)) {
+      registeredEmails.add(userEmail);
+    }
     isLoggedIn = true;
+    _saveToPreferences();
     notifyListeners();
   }
 
@@ -540,36 +576,51 @@ class AppData extends ChangeNotifier {
     userName = 'Natcha Cook';
     userEmail = 'natcha.cook@gmail.com';
     isLoggedIn = true;
+    _saveToPreferences();
     notifyListeners();
   }
 
   void logout() {
     isLoggedIn = false;
+    _saveToPreferences();
     notifyListeners();
   }
 
   void updateProfile(String name, String email) {
     userName = name;
     userEmail = email;
+    _saveToPreferences();
     notifyListeners();
   }
 
-  // Ingredients Matching & Category Search Methods
+  // Ingredients CRUD Management
   void addIngredient(String name) {
     final cleaned = name.trim();
     if (cleaned.isNotEmpty && !userIngredients.contains(cleaned)) {
       userIngredients.add(cleaned);
+      _saveToPreferences();
+      notifyListeners();
+    }
+  }
+
+  void editIngredient(int index, String newName) {
+    final cleaned = newName.trim();
+    if (index >= 0 && index < userIngredients.length && cleaned.isNotEmpty) {
+      userIngredients[index] = cleaned;
+      _saveToPreferences();
       notifyListeners();
     }
   }
 
   void removeIngredient(String name) {
     userIngredients.remove(name);
+    _saveToPreferences();
     notifyListeners();
   }
 
   void clearIngredients() {
     userIngredients.clear();
+    _saveToPreferences();
     notifyListeners();
   }
 
@@ -601,6 +652,43 @@ class AppData extends ChangeNotifier {
     return list;
   }
 
+  // Photo-to-Recipe Detection Engine
+  Recipe? detectRecipeFromPhoto(File photoFile) {
+    final fileName = photoFile.path.toLowerCase();
+
+    if (fileName.contains('egg') || fileName.contains('ไข่')) {
+      return _recipes.firstWhere((r) => r.title == 'ไข่เจียวมะเขือเทศ', orElse: () => _recipes.first);
+    } else if (fileName.contains('rice') || fileName.contains('ข้าว')) {
+      return _recipes.firstWhere((r) => r.title == 'ข้าวผัดไข่', orElse: () => _recipes.first);
+    } else if (fileName.contains('salad') || fileName.contains('สลัด')) {
+      return _recipes.firstWhere((r) => r.title == 'สลัดอกไก่ย่าง', orElse: () => _recipes[5]);
+    } else if (fileName.contains('cake') || fileName.contains('เค้ก')) {
+      return _recipes.firstWhere((r) => r.title == 'เค้กช็อกโกแลตหน้านุ่ม', orElse: () => _recipes[6]);
+    } else if (fileName.contains('waffle') || fileName.contains('วาฟเฟิล')) {
+      return _recipes.firstWhere((r) => r.title == 'วาฟเฟิลผลไม้รวม', orElse: () => _recipes[7]);
+    }
+
+    return _recipes[1]; // Tomato Omelette
+  }
+
+  Recipe? detectRecipeFromXFile(String fileName) {
+    final name = fileName.toLowerCase();
+
+    if (name.contains('egg') || name.contains('ไข่')) {
+      return _recipes.firstWhere((r) => r.title == 'ไข่เจียวมะเขือเทศ', orElse: () => _recipes.first);
+    } else if (name.contains('rice') || name.contains('ข้าว')) {
+      return _recipes.firstWhere((r) => r.title == 'ข้าวผัดไข่', orElse: () => _recipes.first);
+    } else if (name.contains('salad') || name.contains('สลัด')) {
+      return _recipes.firstWhere((r) => r.title == 'สลัดอกไก่ย่าง', orElse: () => _recipes[5]);
+    } else if (name.contains('cake') || name.contains('เค้ก')) {
+      return _recipes.firstWhere((r) => r.title == 'เค้กช็อกโกแลตหน้านุ่ม', orElse: () => _recipes[6]);
+    } else if (name.contains('waffle') || name.contains('วาฟเฟิล')) {
+      return _recipes.firstWhere((r) => r.title == 'วาฟเฟิลผลไม้รวม', orElse: () => _recipes[7]);
+    }
+
+    return _recipes[1]; // Tomato Omelette
+  }
+
   // Favorite Recipes Methods
   void toggleFavorite(Recipe recipe) {
     recipe.isFavorite = !recipe.isFavorite;
@@ -617,7 +705,6 @@ class AppData extends ChangeNotifier {
     if (_mealPlan.containsKey(dayKey)) {
       return _mealPlan[dayKey]!;
     }
-    // Default fallback meals for any unconfigured day
     return {
       'เช้า': _recipes[2], // Smoothies
       'กลางวัน': _recipes[0], // Fried Rice

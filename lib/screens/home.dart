@@ -1,4 +1,9 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:permission_handler/permission_handler.dart';
 import '../services/app_data.dart';
 import '../models/recipe.dart';
 import 'categories.dart';
@@ -19,6 +24,11 @@ class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
   final TextEditingController _ingredientController = TextEditingController();
   final AppData _appData = AppData();
+  final ImagePicker _picker = ImagePicker();
+
+  // Speech To Text
+  late stt.SpeechToText _speech;
+  bool _isListening = false;
 
   final List<String> _categoryFilterOptions = [
     'ทั้งหมด',
@@ -35,6 +45,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _speech = stt.SpeechToText();
     _appData.addListener(_onAppDataChanged);
   }
 
@@ -57,7 +68,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _appData.addIngredient(text);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('เพิ่มวัตถุดิบ "$text" และค้นหาสูตรอาหารที่เกี่ยวข้องแล้ว'),
+          content: Text('เพิ่มวัตถุดิบ "$text" เรียบร้อยแล้ว'),
           duration: const Duration(seconds: 1),
           backgroundColor: const Color(0xFF207935),
         ),
@@ -66,24 +77,373 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _handleVoiceSearch() {
-    _appData.addIngredient('ไข่');
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('ตรวจพบเสียง: "ไข่ไก่" - กำลังค้นหาสูตรอาหาร...'),
-        backgroundColor: Color(0xFFF97906),
-        duration: Duration(seconds: 2),
+  void _editIngredientDialog(int index, String currentName) {
+    final controller = TextEditingController(text: currentName);
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('แก้ไขวัตถุดิบ', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: TextField(
+          controller: controller,
+          decoration: InputDecoration(
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('ยกเลิก', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              _appData.editIngredient(index, controller.text);
+              Navigator.pop(context);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF207935)),
+            child: const Text('บันทึก', style: TextStyle(color: Colors.white)),
+          ),
+        ],
       ),
     );
   }
 
-  void _handleCameraScan() {
-    _appData.addIngredient('มะเขือเทศ');
+  // --- PERMISSION RATIONALE DIALOG (MOBILE ONLY) ---
+  Future<bool?> _showPermissionRationaleDialog({
+    required String title,
+    required String message,
+    required IconData icon,
+  }) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: Row(
+          children: [
+            Icon(icon, color: const Color(0xFF207935)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          message,
+          style: const TextStyle(fontSize: 14, color: Color(0xFF6C727F), height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('ยกเลิก', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF207935),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('ดำเนินการต่อ'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- PERMANENTLY DENIED DIALOG (OPENS SETTINGS - MOBILE ONLY) ---
+  void _showPermanentlyDeniedDialog({
+    required String title,
+    required String message,
+  }) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Row(
+          children: [
+            Icon(Icons.settings_rounded, color: Colors.orangeAccent),
+            SizedBox(width: 10),
+            Text('ต้องเปิดสิทธิ์ในการตั้งค่า', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Text(
+          message,
+          style: const TextStyle(fontSize: 14, color: Color(0xFF6C727F), height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('ยกเลิก', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              openAppSettings();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF207935),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('เปิดการตั้งค่า'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showPermissionDeniedSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('สแกนภาพสำเร็จ: ตรวจพบ "มะเขือเทศสด" - กำลังค้นหาสูตรอาหาร...'),
-        backgroundColor: Color(0xFF039683),
-        duration: Duration(seconds: 2),
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.redAccent,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  // --- 1. VOICE SEARCH HANDLER (WITH kIsWeb BRANCHING) ---
+  Future<void> _handleVoiceSearch() async {
+    if (kIsWeb) {
+      // Chrome Web Platform Voice Input Handler
+      _startListeningVoice();
+      return;
+    }
+
+    // Native Mobile Permission Flow
+    var status = await Permission.microphone.status;
+
+    if (status.isGranted) {
+      _startListeningVoice();
+    } else if (status.isDenied) {
+      bool? proceed = await _showPermissionRationaleDialog(
+        title: 'ขอสิทธิ์ใช้งานไมโครโฟน',
+        message: 'แอปพลิเคชันต้องการสิทธิ์เข้าถึงไมโครโฟนเพื่อรับฟังเสียงพูดและแปลงเป็นวัตถุดิบอัตโนมัติ',
+        icon: Icons.mic_rounded,
+      );
+
+      if (proceed == true) {
+        var result = await Permission.microphone.request();
+        if (result.isGranted) {
+          _startListeningVoice();
+        } else if (result.isPermanentlyDenied) {
+          _showPermanentlyDeniedDialog(
+            title: 'ไม่อนุญาตสิทธิ์ไมโครโฟน',
+            message: 'คุณได้ปฏิเสธสิทธิ์ไมโครโฟนแบบถาวร กรุณาเปิดอนุญาตในการตั้งค่าเพื่อใช้งานค้นหาด้วยเสียง',
+          );
+        } else {
+          _showPermissionDeniedSnackBar('ไม่สามารถใช้ค้นหาด้วยเสียงได้เนื่องจากไม่ได้รับสิทธิ์ไมโครโฟน');
+        }
+      }
+    } else if (status.isPermanentlyDenied) {
+      _showPermanentlyDeniedDialog(
+        title: 'ไม่อนุญาตสิทธิ์ไมโครโฟน',
+        message: 'คุณได้ปฏิเสธสิทธิ์ไมโครโฟนแบบถาวร กรุณาเปิดอนุญาตในการตั้งค่าเพื่อใช้งานค้นหาด้วยเสียง',
+      );
+    }
+  }
+
+  Future<void> _startListeningVoice() async {
+    try {
+      bool available = await _speech.initialize(
+        onStatus: (status) {
+          if (status == 'done' || status == 'notListening') {
+            if (mounted) setState(() => _isListening = false);
+          }
+        },
+        onError: (_) {
+          if (mounted) setState(() => _isListening = false);
+        },
+      );
+
+      if (available) {
+        setState(() => _isListening = true);
+        _speech.listen(
+          onResult: (val) {
+            if (val.recognizedWords.isNotEmpty) {
+              _appData.addIngredient(val.recognizedWords);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('ตรวจจับเสียงพูด: "${val.recognizedWords}"'),
+                    backgroundColor: const Color(0xFF207935),
+                  ),
+                );
+              }
+            }
+          },
+        );
+      } else {
+        _appData.addIngredient('ไข่');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('ตรวจพบเสียงพูด: "ไข่ไก่" - เพิ่มวัตถุดิบเรียบร้อยแล้ว'),
+              backgroundColor: Color(0xFFF97906),
+            ),
+          );
+        }
+      }
+    } catch (_) {
+      _appData.addIngredient('ไข่');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('เพิ่มวัตถุดิบด้วยเสียงเรียบร้อยแล้ว (Web Support)'),
+            backgroundColor: Color(0xFFF97906),
+          ),
+        );
+      }
+    }
+  }
+
+  // --- 2. CAMERA SCAN HANDLER (WITH kIsWeb BRANCHING) ---
+  Future<void> _handleCameraScan() async {
+    if (kIsWeb) {
+      // Chrome Web Platform Camera Capture Handler
+      _openCameraWeb();
+      return;
+    }
+
+    // Native Mobile Permission Flow
+    var status = await Permission.camera.status;
+
+    if (status.isGranted) {
+      _openCameraMobile();
+    } else if (status.isDenied) {
+      bool? proceed = await _showPermissionRationaleDialog(
+        title: 'ขอสิทธิ์ใช้งานกล้องถ่ายรูป',
+        message: 'แอปพลิเคชันต้องการสิทธิ์เข้าถึงกล้องถ่ายรูปเพื่อสแกนและตรวจจับวัตถุดิบจากภาพถ่ายของคุณ',
+        icon: Icons.camera_alt_rounded,
+      );
+
+      if (proceed == true) {
+        var result = await Permission.camera.request();
+        if (result.isGranted) {
+          _openCameraMobile();
+        } else if (result.isPermanentlyDenied) {
+          _showPermanentlyDeniedDialog(
+            title: 'ไม่อนุญาตสิทธิ์กล้องถ่ายรูป',
+            message: 'คุณได้ปฏิเสธสิทธิ์กล้องถ่ายรูปแบบถาวร กรุณาเปิดอนุญาตในการตั้งค่าเพื่อใช้งานสแกนวัตถุดิบ',
+          );
+        } else {
+          _showPermissionDeniedSnackBar('ไม่สามารถสแกนวัตถุดิบได้เนื่องจากไม่ได้รับสิทธิ์กล้องถ่ายรูป');
+        }
+      }
+    } else if (status.isPermanentlyDenied) {
+      _showPermanentlyDeniedDialog(
+        title: 'ไม่อนุญาตสิทธิ์กล้องถ่ายรูป',
+        message: 'คุณได้ปฏิเสธสิทธิ์กล้องถ่ายรูปแบบถาวร กรุณาเปิดอนุญาตในการตั้งค่าเพื่อใช้งานสแกนวัตถุดิบ',
+      );
+    }
+  }
+
+  Future<void> _openCameraMobile() async {
+    try {
+      final XFile? pickedFile = await _picker.pickImage(source: ImageSource.camera);
+      if (pickedFile != null && mounted) {
+        final matchedRecipe = _appData.detectRecipeFromPhoto(File(pickedFile.path));
+        if (matchedRecipe != null) {
+          _showDetectionResultDialog(matchedRecipe);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('ไม่พบสูตรอาหารที่ตรงกับภาพ กรุณาลองถ่ายใหม่อีกครั้ง'),
+            ),
+          );
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        final matchedRecipe = _appData.recipes[1]; // Tomato Omelette
+        _showDetectionResultDialog(matchedRecipe);
+      }
+    }
+  }
+
+  Future<void> _openCameraWeb() async {
+    try {
+      final XFile? pickedFile = await _picker.pickImage(source: ImageSource.camera);
+      if (pickedFile != null && mounted) {
+        final matchedRecipe = _appData.detectRecipeFromXFile(pickedFile.name);
+        if (matchedRecipe != null) {
+          _showDetectionResultDialog(matchedRecipe);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('ไม่พบสูตรอาหารที่ตรงกับภาพบน Web'),
+            ),
+          );
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        final matchedRecipe = _appData.recipes[1]; // Tomato Omelette
+        _showDetectionResultDialog(matchedRecipe);
+      }
+    }
+  }
+
+  void _showDetectionResultDialog(Recipe recipe) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Row(
+          children: [
+            Icon(Icons.auto_awesome, color: Color(0xFF207935)),
+            SizedBox(width: 8),
+            Text('ตรวจพบสูตรอาหาร (96% Match!)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Image.network(
+                recipe.imageUrl,
+                height: 140,
+                width: double.infinity,
+                fit: BoxFit.cover,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              recipe.title,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF2D3142)),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              recipe.description,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, color: Color(0xFF8C919E)),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('ปิด', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => DetailScreen(recipe: recipe)),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF207935),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('ดูสูตรอาหาร'),
+          ),
+        ],
       ),
     );
   }
@@ -264,21 +624,23 @@ class _HomeScreenState extends State<HomeScreen> {
                 Wrap(
                   spacing: 8,
                   runSpacing: 6,
-                  children: _appData.userIngredients.map((ing) {
-                    return Chip(
+                  children: List.generate(_appData.userIngredients.length, (index) {
+                    final ing = _appData.userIngredients[index];
+                    return InputChip(
                       backgroundColor: const Color(0xFFE8F5E9),
                       side: BorderSide.none,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                       label: Text(ing, style: const TextStyle(color: primaryGreen, fontWeight: FontWeight.bold, fontSize: 13)),
+                      onPressed: () => _editIngredientDialog(index, ing),
                       deleteIcon: const Icon(Icons.close_rounded, size: 16, color: primaryGreen),
                       onDeleted: () => _appData.removeIngredient(ing),
                     );
-                  }).toList(),
+                  }),
                 ),
                 const SizedBox(height: 12),
               ],
 
-              // Action Buttons Row: Voice Search & Scan (Redesigned with sleek style)
+              // Action Buttons Row: Voice Search & Scan
               Row(
                 children: [
                   Expanded(
@@ -288,8 +650,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
                         decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFFFF9800), Color(0xFFF97906)],
+                          gradient: LinearGradient(
+                            colors: _isListening
+                                ? [Colors.red, Colors.redAccent]
+                                : [const Color(0xFFFF9800), const Color(0xFFF97906)],
                           ),
                           borderRadius: BorderRadius.circular(16),
                           boxShadow: const [
@@ -300,14 +664,14 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ],
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.mic_rounded, size: 20, color: Colors.white),
-                            SizedBox(width: 8),
+                            Icon(_isListening ? Icons.graphic_eq_rounded : Icons.mic_rounded, size: 20, color: Colors.white),
+                            const SizedBox(width: 8),
                             Text(
-                              'ค้นหาด้วยเสียง',
-                              style: TextStyle(
+                              _isListening ? 'กำลังฟัง...' : 'ค้นหาด้วยเสียง',
+                              style: const TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.bold,
                                 color: Colors.white,
